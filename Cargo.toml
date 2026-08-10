@@ -2,10 +2,11 @@
 name = "bitdeck"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.95"
 description = "A minimal, fast, deterministic bitmask deck of cards."
 repository = "https://git.izaforge.com/izarma/bitdeck"
-keywords = ["deck", "cards", "rng", "gamedev"]
+license = "MIT OR Apache-2.0"
+keywords = ["deck", "cards", "rng", "gamedev", "bitmask"]
 categories = ["game-development"]
 readme = "README.md"
 

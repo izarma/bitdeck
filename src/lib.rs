@@ -8,19 +8,17 @@ pub const CARD_COUNT: u8 = 54;
 /// Bitmask with all [`CARD_COUNT`] bits set; the initial state of a full deck.
 pub const FULL_DECK: u64 = (1 << CARD_COUNT) - 1;
 
-/// A standard 52-card deck plus two jokers, represented as a bitmask of the
-/// cards that remain.
+/// A standard 52-card deck plus two jokers.
 ///
-/// Card identity is just a number:
-///   - `0..=51` -> standard cards (`suit = id / 13`, `rank = id % 13`)
-///   - `52, 53` -> the two jokers
+/// Cards are identified by number; see the [crate-level documentation](crate)
+/// for the mapping and a quick-start example.
 ///
-/// Deck state is which cards remain, stored as one 64-bit bitmask.
-///
-/// See the [crate-level documentation](crate) for a quick-start example.
-#[derive(Clone, Debug)]
+/// Internally, the set of remaining cards is stored as a 64-bit bitmask, so a
+/// deck is `Copy`, allocation-free, and fits in 8 bytes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "bevy", derive(bevy_ecs::prelude::Resource))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
 pub struct StdDeck {
     mask: u64,
 }
@@ -37,8 +35,44 @@ impl StdDeck {
     /// Drawing from it returns `None` until cards are added back with
     /// [`insert`](Self::insert) or [`restock`](Self::restock).
     #[inline]
+    #[must_use]
     pub fn empty() -> Self {
         Self { mask: 0 }
+    }
+
+    /// Wraps a raw bitmask into a deck.
+    ///
+    /// Bits above [`CARD_COUNT`] are always masked off; in debug builds their
+    /// presence also panics, since they are not cards. A mask produced by
+    /// [`as_bits`](Self::as_bits) always round-trips.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bitdeck::StdDeck;
+    ///
+    /// let deck = StdDeck::default();
+    /// assert_eq!(StdDeck::from_bits(deck.as_bits()), deck);
+    /// ```
+    #[inline]
+    #[must_use]
+    pub fn from_bits(mask: u64) -> Self {
+        debug_assert!(
+            mask & !FULL_DECK == 0,
+            "bits at or above CARD_COUNT are not cards: {mask:#066b}"
+        );
+        Self {
+            mask: mask & FULL_DECK,
+        }
+    }
+
+    /// Returns the raw bitmask of the cards that remain.
+    ///
+    /// The inverse of [`from_bits`](Self::from_bits); handy for persisting a
+    /// deck without the `serde` feature or for sending it over the wire.
+    #[inline]
+    pub fn as_bits(&self) -> u64 {
+        self.mask
     }
 
     /// Restores the deck to a full, unshuffled state.
@@ -49,12 +83,14 @@ impl StdDeck {
 
     /// Returns the number of cards left in the deck.
     #[inline]
+    #[must_use]
     pub fn remaining(&self) -> u32 {
         self.mask.count_ones()
     }
 
     /// Returns `true` if no cards remain.
     #[inline]
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.mask == 0
     }
@@ -72,8 +108,10 @@ impl StdDeck {
     /// let mut deck = StdDeck::default();
     /// let mut rng = SmallRng::seed_from_u64(7);
     ///
-    /// if let Some(card) = deck.draw(&mut rng) {
-    ///     println!("drew card {card}");
+    /// // `draw` returns `None` once the deck is empty, so it can drive a deal loop.
+    /// while let Some(card) = deck.draw(&mut rng) {
+    ///     // Give the card to a player.
+    ///     let _ = card;
     /// }
     /// ```
     #[inline]
@@ -97,8 +135,8 @@ impl StdDeck {
     /// # Examples
     ///
     /// ```
-    /// # use bitdeck::StdDeck;
-    /// # use rand::{SeedableRng, rngs::SmallRng};
+    /// use bitdeck::StdDeck;
+    /// use rand::{SeedableRng, rngs::SmallRng};
     ///
     /// let mut deck = StdDeck::default();
     /// let mut rng = SmallRng::seed_from_u64(99);
@@ -122,28 +160,109 @@ impl StdDeck {
         out.len()
     }
 
-    /// Returns `true` if the given card is still in the deck.
+    /// Iterates over the cards remaining in the deck, in ascending card-id
+    /// order.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bitdeck::StdDeck;
+    ///
+    /// let deck = StdDeck::empty();
+    /// assert_eq!(deck.iter().count(), 0);
+    /// assert_eq!(StdDeck::default().iter().count(), 54);
+    /// ```
     #[inline]
+    #[must_use]
+    pub fn iter(&self) -> Iter {
+        Iter { mask: self.mask }
+    }
+
+    /// Returns `true` if the given card is still in the deck.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `card >= CARD_COUNT`.
+    #[inline]
+    #[must_use]
     pub fn contains(&self, card: u8) -> bool {
-        debug_assert!(card < CARD_COUNT, "card id {card} out of range");
+        assert!(card < CARD_COUNT, "card id {card} out of range");
         (self.mask >> card) & 1 == 1
     }
 
     /// Puts `card` back into the deck. No effect if it is already present.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `card >= CARD_COUNT`.
     #[inline]
     pub fn insert(&mut self, card: u8) {
-        debug_assert!(card < CARD_COUNT, "card id {card} out of range");
+        assert!(card < CARD_COUNT, "card id {card} out of range");
         self.mask |= 1u64 << card;
     }
 
     /// Removes `card` from the deck and returns whether it was present.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `card >= CARD_COUNT`.
     #[inline]
     pub fn remove(&mut self, card: u8) -> bool {
-        debug_assert!(card < CARD_COUNT, "card id {card} out of range");
-        let bit = 1u64 << card;
-        let had = (self.mask & bit) != 0;
-        self.mask &= !bit;
+        let had = self.contains(card);
+        self.mask &= !(1u64 << card);
         had
+    }
+}
+
+/// Iterator over the cards remaining in a [`StdDeck`], in ascending card-id
+/// order. Created by [`StdDeck::iter`].
+#[derive(Clone, Debug)]
+pub struct Iter {
+    mask: u64,
+}
+
+impl Iterator for Iter {
+    type Item = u8;
+
+    #[inline]
+    fn next(&mut self) -> Option<u8> {
+        if self.mask == 0 {
+            return None;
+        }
+        let bit = self.mask & self.mask.wrapping_neg();
+        self.mask &= self.mask - 1;
+        Some(bit.trailing_zeros() as u8)
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let n = self.mask.count_ones() as usize;
+        (n, Some(n))
+    }
+}
+
+impl DoubleEndedIterator for Iter {
+    #[inline]
+    fn next_back(&mut self) -> Option<u8> {
+        if self.mask == 0 {
+            return None;
+        }
+        let idx = self.mask.ilog2();
+        self.mask &= !(1u64 << idx);
+        Some(idx as u8)
+    }
+}
+
+impl ExactSizeIterator for Iter {}
+impl core::iter::FusedIterator for Iter {}
+
+impl IntoIterator for &StdDeck {
+    type Item = u8;
+    type IntoIter = Iter;
+
+    #[inline]
+    fn into_iter(self) -> Iter {
+        self.iter()
     }
 }
 
@@ -189,7 +308,6 @@ mod tests {
         }
         assert_eq!(drawn.len(), CARD_COUNT as usize);
         assert!(deck.is_empty());
-        // Every card drawn exactly once.
         drawn.sort_unstable();
         drawn.dedup();
         assert_eq!(drawn.len(), CARD_COUNT as usize);
@@ -212,6 +330,84 @@ mod tests {
         assert_eq!(drawn, CARD_COUNT as usize);
         assert_eq!(out.len(), CARD_COUNT as usize);
         assert!(deck.is_empty());
+    }
+
+    #[test]
+    fn insert_contains_remove_roundtrip() {
+        let mut deck = StdDeck::empty();
+        assert!(!deck.contains(7));
+
+        deck.insert(7);
+        assert!(deck.contains(7));
+        assert_eq!(deck.remaining(), 1);
+
+        // Insert is idempotent.
+        deck.insert(7);
+        assert_eq!(deck.remaining(), 1);
+
+        assert!(deck.remove(7));
+        assert!(!deck.contains(7));
+        assert!(deck.is_empty());
+
+        // Removing an absent card reports it.
+        assert!(!deck.remove(7));
+    }
+
+    #[test]
+    #[should_panic(expected = "out of range")]
+    fn contains_panics_on_out_of_range_card() {
+        let _ = StdDeck::default().contains(CARD_COUNT);
+    }
+
+    #[test]
+    fn bits_roundtrip() {
+        let mut deck = StdDeck::default();
+        let mut rng = test_rng();
+        for _ in 0..17 {
+            deck.draw(&mut rng);
+        }
+        assert_eq!(StdDeck::from_bits(deck.as_bits()), deck);
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "not cards")]
+    fn from_bits_panics_on_bits_above_card_count_in_debug() {
+        let _ = StdDeck::from_bits(u64::MAX);
+    }
+
+    #[test]
+    fn iter_yields_all_cards_in_ascending_order() {
+        let cards: Vec<u8> = StdDeck::default().iter().collect();
+        assert_eq!(cards.len(), CARD_COUNT as usize);
+        assert!(cards.windows(2).all(|w| w[0] < w[1]));
+    }
+
+    #[test]
+    fn iter_skips_drawn_cards() {
+        let mut deck = StdDeck::default();
+        assert!(deck.remove(0));
+        assert!(deck.remove(53));
+        let cards: Vec<u8> = deck.iter().collect();
+        assert_eq!(cards.len(), CARD_COUNT as usize - 2);
+        assert_eq!(cards.first(), Some(&1));
+        assert_eq!(cards.last(), Some(&52));
+    }
+
+    #[test]
+    fn into_iter_on_reference_matches_iter() {
+        let deck = StdDeck::default();
+        let collected: Vec<u8> = (&deck).into_iter().collect();
+        assert_eq!(collected, deck.iter().collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn iter_len_and_double_ended() {
+        let mut iter = StdDeck::default().iter();
+        assert_eq!(iter.len(), CARD_COUNT as usize);
+        assert_eq!(iter.next(), Some(0));
+        assert_eq!(iter.next_back(), Some(53));
+        assert_eq!(iter.len(), CARD_COUNT as usize - 2);
     }
 
     #[test]

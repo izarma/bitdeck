@@ -2,10 +2,18 @@
 
 A minimal, fast, deterministic bitmask deck of cards.
 
+[`StdDeck`] packs the entire state of a 54-card deck (52 standard cards plus two
+jokers) into a single `u64`.
+
+Cards are identified by number:
+
+- `0..=51` : standard cards (`suit = id / 13`, `rank = id % 13`)
+- `52, 53` : the two jokers
+
 ## Features
 
 - `serde`: serialization support for [`StdDeck`].
-- `bevy`: derives [`bevy_ecs::prelude::Resource`] for [`StdDeck`].
+- `bevy`: derives [`bevy_ecs::prelude::Resource`](https://docs.rs/bevy_ecs/latest/bevy_ecs/prelude/struct.Resource.html) for [`StdDeck`].
 
 ## Usage
 
