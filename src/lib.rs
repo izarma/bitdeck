@@ -31,9 +31,8 @@ pub struct Deck<const N: u8> {
 pub type StdDeck = Deck<54>;
 
 impl<const N: u8> Default for Deck<N> {
-    #[allow(path_statements)]
     fn default() -> Self {
-        Self::CHECK_SIZE;
+        const { assert!(N <= 64, "deck size must fit in a u64 bitmask") };
         Self {
             mask: full_mask::<N>(),
         }
@@ -41,19 +40,14 @@ impl<const N: u8> Default for Deck<N> {
 }
 
 impl<const N: u8> Deck<N> {
-    // Force a compile-time error if a consumer tries to instantiate a deck that
-    // does not fit in a u64.
-    const CHECK_SIZE: () = assert!(N <= 64, "deck size must fit in a u64 bitmask");
-
     /// Returns a deck with no cards remaining.
     ///
     /// Drawing from it returns `None` until cards are added back with
     /// [`insert`](Self::insert) or [`restock`](Self::restock).
     #[inline]
     #[must_use]
-    #[allow(path_statements)]
     pub const fn empty() -> Self {
-        Self::CHECK_SIZE;
+        const { assert!(N <= 64, "deck size must fit in a u64 bitmask") };
         Self { mask: 0 }
     }
 
@@ -73,9 +67,8 @@ impl<const N: u8> Deck<N> {
     /// ```
     #[inline]
     #[must_use]
-    #[allow(path_statements)]
     pub fn from_bits(mask: u64) -> Self {
-        Self::CHECK_SIZE;
+        const { assert!(N <= 64, "deck size must fit in a u64 bitmask") };
         debug_assert!(
             mask & !full_mask::<N>() == 0,
             "bits at or above deck size are not cards: {mask:#066b}"
