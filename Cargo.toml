@@ -27,11 +27,11 @@ ron = "0.12.2"
 
 [[example]]
 name = "cards"
-required-features = ["cards"]
+required-features = ["cards", "rand"]
 
 [[example]]
 name = "peek"
-required-features = ["cards"]
+required-features = ["cards", "rand"]
 
 [[example]]
 name = "weighted"

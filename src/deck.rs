@@ -363,9 +363,12 @@ impl<const N: u8> Deck<N> {
     }
 
     /// Returns `true` if every card of the subset `mask` is still in the deck.
+    ///
+    /// Bits at or above `N` are ignored.
     #[inline]
     #[must_use]
     pub const fn contains_all(&self, mask: u64) -> bool {
+        let mask = mask & full_mask::<N>();
         self.mask & mask == mask
     }
 

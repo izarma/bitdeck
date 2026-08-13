@@ -341,6 +341,7 @@ fn mask_queries_track_subset_membership() {
 
     // Queries ignore mask bits at or above N.
     assert_eq!(deck.count_in(u64::MAX), 16);
+    assert!(deck.contains_all(u64::MAX));
 
     deck.remove(1);
     assert!(deck.contains_any(SPREAD));
@@ -417,9 +418,30 @@ fn meanings_from_id_round_trips_through_masks() {
 }
 
 #[test]
-#[should_panic(expected = "card id has no Half")]
-fn meanings_from_id_panics_on_unmapped_id() {
+#[should_panic(expected = "card id out of range")]
+fn meanings_from_id_panics_on_out_of_range_id() {
     let _ = Half::from_id(16); // beyond the covered ids
+}
+
+#[test]
+#[cfg(feature = "cards")]
+#[should_panic(expected = "card id out of range")]
+fn suit_from_id_panics_on_joker() {
+    let _ = crate::cards::Suit::from_id(52);
+}
+
+#[test]
+#[cfg(feature = "cards")]
+#[should_panic(expected = "card id out of range")]
+fn rank_from_id_panics_on_joker() {
+    let _ = crate::cards::Rank::from_id(52);
+}
+
+#[test]
+#[cfg(feature = "cards")]
+#[should_panic(expected = "card id out of range")]
+fn color_from_id_panics_on_joker() {
+    let _ = crate::cards::Color::from_id(52);
 }
 
 #[test]

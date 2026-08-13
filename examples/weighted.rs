@@ -34,7 +34,7 @@ fn main() {
 
     // A normal draw naturally weights rarities by how many cards they have.
     while let Some(id) = pool.draw(&mut rng) {
-        println!("  Pulled {} ({} cards remain)", name(id), pool.remaining());
+        println!("  Pulled {} ({} drops remain)", name(id), pool.remaining());
     }
 
     assert!(pool.is_empty());

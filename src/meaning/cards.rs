@@ -34,31 +34,31 @@ meanings! {
 meanings! {
     /// The 13 ranks (`id % 13`).
     pub enum Rank {
-        /// Id | start 0 | step 13 | count 4 |
+        /// Ace: ids 0, 13, 26, 39.
         Ace,
-        /// Id | start 1 | step 13 | count 4 |
+        /// 2: ids 1, 14, 27, 40.
         Two,
-        /// Id | start 2 | step 13 | count 4 |
+        /// 3: ids 2, 15, 28, 41.
         Three,
-        /// Id | start 3 | step 13 | count 4 |
+        /// 4: ids 3, 16, 29, 42.
         Four,
-        /// Id | start 4 | step 13 | count 4 |
+        /// 5: ids 4, 17, 30, 43.
         Five,
-        /// Id | start 5 | step 13 | count 4 |
+        /// 6: ids 5, 18, 31, 44.
         Six,
-        /// Id | start 6 | step 13 | count 4 |
+        /// 7: ids 6, 19, 32, 45.
         Seven,
-        /// Id | start 7 | step 13 | count 4 |
+        /// 8: ids 7, 20, 33, 46.
         Eight,
-        /// Id | start 8 | step 13 | count 4 |
+        /// 9: ids 8, 21, 34, 47.
         Nine,
-        /// Id | start 9 | step 13 | count 4 |
+        /// 10: ids 9, 22, 35, 48.
         Ten,
-        /// Id | start 10 | step 13 | count 4 |
+        /// 11: ids 10, 23, 36, 49.
         Jack,
-        /// Id | start 11 | step 13 | count 4 |
+        /// 12: ids 11, 24, 37, 50.
         Queen,
-        /// Id | start 12 | step 13 | count 4 |
+        /// 13: ids 12, 25, 38, 51.
         King,
     }
     from_id = |id: u8| id % 13;

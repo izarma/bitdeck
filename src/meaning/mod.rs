@@ -46,7 +46,8 @@ pub const fn stride_mask(start: u8, step: u8, count: u8) -> u64 {
 /// generates, for each variant, the bitmask of all card ids that map to it
 /// (computed at compile time by inverting the mapping), plus:
 ///
-/// - `from_id(id) -> Self` — the mapping itself; panics on unmapped ids,
+/// - `from_id(id) -> Self` — the mapping itself; panics on out-of-range or
+///   unmapped ids,
 /// - `mask(self) -> u64` — the bitmask of every id with this meaning,
 /// - `ALL: u64` — the bitmask of every id the meaning covers.
 ///
@@ -56,9 +57,10 @@ pub const fn stride_mask(start: u8, step: u8, count: u8) -> u64 {
 /// contexts.
 ///
 /// The mapping is an arbitrary expression over the id, so irregular layouts
-/// (jokers, short decks, non-uniform suits) work as long as unmapped ids
-/// produce an index with no matching variant. `cards` bounds the ids the
-/// mapping must handle; ids at or above it are ignored.
+/// (jokers, short decks, non-uniform suits) work as long as unmapped ids below
+/// `cards` produce an index with no matching variant. `cards` bounds the ids
+/// the mapping must handle; ids at or above it are ignored by the generated
+/// `mask` but will panic in `from_id`.
 ///
 /// # Examples
 ///
@@ -109,10 +111,14 @@ macro_rules! meanings {
             ///
             /// # Panics
             ///
-            /// Panics if `id` maps to no variant.
+            /// Panics if `id` is out of range (greater than or equal to
+            /// `cards`) or if the mapping produces no variant.
             #[inline]
             #[must_use]
             pub const fn from_id(id: u8) -> Self {
+                if id >= $cards {
+                    panic!("card id out of range");
+                }
                 let index = { let $id = id; $body };
                 $( if index == Self::$variant as u8 { return Self::$variant; } )*
                 panic!(concat!("card id has no ", stringify!($name)))
