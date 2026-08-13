@@ -3,6 +3,10 @@
 
 use rand::{Rng, RngExt};
 
+/// Standard-card suits, ranks, colors, and predefined masks.
+#[cfg(feature = "cards")]
+pub mod cards;
+
 /// Bitmask with all [`CARD_COUNT`] bits set; the initial state of a full [`Deck`].
 pub const FULL_DECK: u64 = full_mask::<CARD_COUNT>();
 
@@ -104,6 +108,33 @@ impl<const N: u8> Deck<N> {
         self.mask = full_mask::<N>();
     }
 
+    /// Puts every card selected by `mask` back into the deck.
+    ///
+    /// Bits at or above `N` are ignored.
+    #[inline]
+    pub const fn insert_all(&mut self, mask: u64) {
+        self.mask |= mask & full_mask::<N>();
+    }
+
+    /// Removes every remaining card selected by `mask` and returns how many
+    /// were removed.
+    ///
+    /// Bits at or above `N` are ignored.
+    #[inline]
+    pub const fn remove_all(&mut self, mask: u64) -> u32 {
+        let removed = self.count_in(mask);
+        self.mask &= !mask;
+        removed
+    }
+
+    /// Keeps only the remaining cards selected by `mask`.
+    ///
+    /// Bits at or above `N` are ignored.
+    #[inline]
+    pub const fn retain(&mut self, mask: u64) {
+        self.mask &= mask;
+    }
+
     /// Returns the number of cards left in the deck.
     #[inline]
     #[must_use]
@@ -116,6 +147,39 @@ impl<const N: u8> Deck<N> {
     #[must_use]
     pub const fn is_empty(&self) -> bool {
         self.mask == 0
+    }
+
+    /// Returns the raw bitmask of cards that have been drawn.
+    #[inline]
+    #[must_use]
+    pub const fn drawn_mask(&self) -> u64 {
+        !self.mask & full_mask::<N>()
+    }
+
+    /// Returns the number of cards that have been drawn.
+    #[inline]
+    #[must_use]
+    pub const fn drawn_count(&self) -> u32 {
+        N as u32 - self.remaining()
+    }
+
+    /// Iterates over drawn cards in ascending card-id order.
+    #[inline]
+    #[must_use]
+    pub const fn iter_drawn(&self) -> Iter {
+        Iter {
+            mask: self.drawn_mask(),
+        }
+    }
+
+    /// Iterates over remaining cards selected by `mask`, in ascending card-id
+    /// order.
+    #[inline]
+    #[must_use]
+    pub const fn iter_in(&self, mask: u64) -> Iter {
+        Iter {
+            mask: self.mask & mask,
+        }
     }
 
     /// Iterates over the cards remaining in the deck, in ascending card-id
@@ -133,6 +197,51 @@ impl<const N: u8> Deck<N> {
     #[must_use]
     pub const fn iter(&self) -> Iter {
         Iter { mask: self.mask }
+    }
+
+    /// Returns the `k`th remaining card in ascending card-id order.
+    ///
+    /// Returns `None` when `k` is greater than or equal to
+    /// [`remaining`](Self::remaining).
+    #[inline]
+    #[must_use]
+    pub fn nth(&self, k: u32) -> Option<u8> {
+        (k < self.remaining()).then(|| card_id(select_nth_set(self.mask, k)))
+    }
+
+    /// Returns the lowest-id remaining card.
+    #[inline]
+    #[must_use]
+    pub fn first(&self) -> Option<u8> {
+        (!self.is_empty()).then(|| card_id(self.mask.isolate_lowest_one()))
+    }
+
+    /// Returns the highest-id remaining card.
+    #[inline]
+    #[must_use]
+    pub fn last(&self) -> Option<u8> {
+        (!self.is_empty()).then(|| self.mask.ilog2() as u8)
+    }
+
+    /// Randomly selects a remaining card without removing it.
+    ///
+    /// Returns `None` if the deck is empty.
+    #[inline]
+    pub fn peek(&self, rng: &mut impl Rng) -> Option<u8> {
+        self.peek_in(rng, full_mask::<N>())
+    }
+
+    /// Randomly selects a remaining card from `mask` without removing it.
+    ///
+    /// Returns `None` if no selected card remains.
+    #[inline]
+    pub fn peek_in(&self, rng: &mut impl Rng, mask: u64) -> Option<u8> {
+        let subset = self.mask & mask;
+        if subset == 0 {
+            return None;
+        }
+        let k = rng.random_range(0..subset.count_ones());
+        Some(card_id(select_nth_set(subset, k)))
     }
 
     /// Draws one random card from the deck, removing it.
@@ -285,6 +394,16 @@ impl<const N: u8> Deck<N> {
     #[must_use]
     pub const fn count_in(&self, mask: u64) -> u32 {
         (self.mask & mask).count_ones()
+    }
+
+    /// Returns the probability that a uniformly random remaining card is in
+    /// `mask`.
+    ///
+    /// Returns `NaN` when the deck is empty.
+    #[inline]
+    #[must_use]
+    pub fn chance(&self, mask: u64) -> f64 {
+        self.count_in(mask) as f64 / self.remaining() as f64
     }
 
     /// Puts `card` back into the deck. No effect if it is already present.
@@ -568,6 +687,14 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(not(debug_assertions), ignore)]
+    #[should_panic(expected = "bits at or above deck size are not cards")]
+    fn from_bits_panics_on_bits_above_size_in_debug() {
+        // In release builds high bits are silently masked, so the test is ignored.
+        let _ = Deck::<4>::from_bits(u64::MAX);
+    }
+
+    #[test]
     fn default_remaining_and_full_mask() {
         assert_eq!(Deck::<1>::default().remaining(), 1);
         assert_eq!(Deck::<13>::default().remaining(), 13);
@@ -575,14 +702,6 @@ mod tests {
         assert_eq!(Deck::<13>::empty().remaining(), 0);
         assert_eq!(full_mask::<64>(), u64::MAX);
         assert_eq!(FULL_DECK, full_mask::<CARD_COUNT>());
-    }
-
-    #[test]
-    #[cfg_attr(not(debug_assertions), ignore)]
-    #[should_panic(expected = "bits at or above deck size are not cards")]
-    fn from_bits_panics_on_bits_above_size_in_debug() {
-        // In release builds high bits are silently masked, so the test is ignored.
-        let _ = Deck::<4>::from_bits(u64::MAX);
     }
 
     #[test]
@@ -718,6 +837,65 @@ mod tests {
         assert_eq!(drawn, 16);
         assert_eq!(out.len(), 16);
         assert!(deck.is_empty());
+    }
+
+    #[test]
+    fn bulk_mutations_ignore_out_of_range_bits_and_report_removals() {
+        let mut deck = Deck::<8>::empty();
+        deck.insert_all(0b1_0000_1010);
+        assert_eq!(deck.as_bits(), 0b1010);
+
+        assert_eq!(deck.remove_all(0b1_0000_1001), 1);
+        assert_eq!(deck.as_bits(), 0b0010);
+
+        deck.insert_all(0b0111_0100);
+        deck.retain(0b1_0011_0110);
+        assert_eq!(deck.as_bits(), 0b0011_0110);
+    }
+
+    #[test]
+    fn drawn_card_introspection_and_iteration_are_complementary() {
+        let mut deck = Deck::<8>::default();
+        assert_eq!(deck.drawn_mask(), 0);
+        assert_eq!(deck.drawn_count(), 0);
+
+        deck.remove_all(0b1010_0101);
+        assert_eq!(deck.drawn_mask(), 0b1010_0101);
+        assert_eq!(deck.drawn_count(), 4);
+        assert_eq!(deck.iter_drawn().collect::<Vec<_>>(), vec![0, 2, 5, 7]);
+        assert_eq!(deck.iter_in(0b0011_1110).collect::<Vec<_>>(), vec![1, 3, 4]);
+    }
+
+    #[test]
+    fn deterministic_and_random_selection_do_not_mutate_the_deck() {
+        let deck = Deck::<8>::from_bits(0b1011_0010);
+        assert_eq!(deck.first(), Some(1));
+        assert_eq!(deck.last(), Some(7));
+        assert_eq!(deck.nth(0), Some(1));
+        assert_eq!(deck.nth(1), Some(4));
+        assert_eq!(deck.nth(3), Some(7));
+        assert_eq!(deck.nth(4), None);
+
+        let mut rng = test_rng();
+        let before = deck;
+        assert!(matches!(deck.peek(&mut rng), Some(1 | 4 | 5 | 7)));
+        assert!(matches!(deck.peek_in(&mut rng, 0b0011_0000), Some(4 | 5)));
+        assert_eq!(deck.peek_in(&mut rng, 0b0000_1000), None);
+        assert_eq!(deck, before);
+
+        let empty = Deck::<8>::empty();
+        assert_eq!(empty.first(), None);
+        assert_eq!(empty.last(), None);
+        assert_eq!(empty.nth(0), None);
+        assert_eq!(empty.peek(&mut rng), None);
+    }
+
+    #[test]
+    fn chance_is_the_fraction_of_remaining_cards_in_a_subset() {
+        let deck = Deck::<8>::from_bits(0b1011_0010);
+        assert_eq!(deck.chance(0b0011_0000), 0.5);
+        assert_eq!(deck.chance(0b1_0000_0000), 0.0);
+        assert!(Deck::<8>::empty().chance(u64::MAX).is_nan());
     }
 
     #[test]

@@ -1,64 +1,25 @@
 //! Example: deal cards to two players until the deck is nearly exhausted,
 //! then answer suit/rank questions and draw by meaning — all bitmask ops.
 //!
-//! Run with: cargo run --example cards
+//! Run with: cargo run --example cards --features=cards
 
-use bitdeck::{StdDeck, meanings, stride_mask};
+// Suits, ranks, and the joker/color masks come from the `cards` feature.
+use bitdeck::{
+    StdDeck,
+    cards::{BLACK, JOKERS, RED, Rank, Suit},
+};
 use rand::{SeedableRng, rngs::SmallRng};
 
-// Primary meanings: Suit and Rank.
-// These map every card id 0..52 to exactly one variant.
-meanings! {
-    /// The four standard suits.
-    enum Suit {
-        Clubs,
-        Diamonds,
-        Hearts,
-        Spades,
-    }
-    from_id = |id: u8| id / 13;
-    cards = 52;
-}
-
-impl Suit {
-    fn symbol(self) -> &'static str {
-        match self {
-            Suit::Clubs => "♣",
-            Suit::Diamonds => "♦",
-            Suit::Hearts => "♥",
-            Suit::Spades => "♠",
-        }
+fn suit_symbol(suit: Suit) -> &'static str {
+    match suit {
+        Suit::Clubs => "♣",
+        Suit::Diamonds => "♦",
+        Suit::Hearts => "♥",
+        Suit::Spades => "♠",
     }
 }
 
-meanings! {
-    /// The 13 ranks.
-    enum Rank {
-        Ace,
-        Two,
-        Three,
-        Four,
-        Five,
-        Six,
-        Seven,
-        Eight,
-        Nine,
-        Ten,
-        Jack,
-        Queen,
-        King,
-    }
-    from_id = |id: u8| id % 13;
-    cards = 52;
-}
-
-// Joker Mask
 const JOKER_START: u8 = 52;
-const JOKERS: u64 = stride_mask(JOKER_START, 1, 2);
-
-// Composed Color masks.
-const RED: u64 = Suit::Diamonds.mask() | Suit::Hearts.mask();
-const BLACK: u64 = Suit::Clubs.mask() | Suit::Spades.mask();
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Card {
@@ -76,7 +37,7 @@ impl Card {
 
     fn name(self) -> String {
         match self {
-            Card::Standard(suit, rank) => format!("{:#?}{}", rank, suit.symbol()),
+            Card::Standard(suit, rank) => format!("{:#?}{}", rank, suit_symbol(suit)),
             Card::Joker(n) => format!("Joker {n}"),
         }
     }
