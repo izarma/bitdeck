@@ -3,12 +3,16 @@
 
 use rand::{Rng, RngExt};
 
-/// Number of cards in a [`StdDeck`] (52 playing cards + 2 jokers).
-pub const CARD_COUNT: u8 = 54;
-/// Bitmask with all [`CARD_COUNT`] bits set; the initial state of a full [`StdDeck`].
+/// Bitmask with all [`CARD_COUNT`] bits set; the initial state of a full [`Deck`].
 pub const FULL_DECK: u64 = full_mask::<CARD_COUNT>();
 
-const fn full_mask<const N: u8>() -> u64 {
+/// Bitmask with the lowest `N` bits set; every card of a [`Deck<N>`].
+///
+/// # Panics
+///
+/// Panics if `N > 64`.
+#[must_use]
+pub const fn full_mask<const N: u8>() -> u64 {
     assert!(N <= 64, "deck size must fit in a u64 bitmask");
     if N == 64 { u64::MAX } else { (1u64 << N) - 1 }
 }
@@ -18,7 +22,11 @@ const fn full_mask<const N: u8>() -> u64 {
 /// Card identity is just a number `0..N`. Deck state is stored as one 64-bit
 /// bitmask, so `N` must be `<= 64`.
 ///
-/// See [`StdDeck`] for the usual 54-card standard deck.
+/// See [`StdDeck`] for the usual 52-card deck plus two jokers.
+///
+/// Subset APIs accept a `u64` mask of card ids, typically built with
+/// [`stride_mask`] or [`meanings!`]. Bits at or above `N` are ignored by
+/// subset queries and draws.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "bevy", derive(bevy_ecs::prelude::Resource))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -27,8 +35,10 @@ pub struct Deck<const N: u8> {
     mask: u64,
 }
 
+/// Number of cards in a [`StdDeck`].
+pub const CARD_COUNT: u8 = 54;
 /// A standard 52-card deck plus two jokers (`Deck<54>`).
-pub type StdDeck = Deck<54>;
+pub type StdDeck = Deck<CARD_COUNT>;
 
 impl<const N: u8> Default for Deck<N> {
     fn default() -> Self {
@@ -88,7 +98,7 @@ impl<const N: u8> Deck<N> {
         self.mask
     }
 
-    /// Restores the deck to a full, unshuffled state.
+    /// Restores the deck to a full state.
     #[inline]
     pub const fn restock(&mut self) {
         self.mask = full_mask::<N>();
@@ -116,8 +126,7 @@ impl<const N: u8> Deck<N> {
     /// ```
     /// use bitdeck::StdDeck;
     ///
-    /// let deck = StdDeck::empty();
-    /// assert_eq!(deck.iter().count(), 0);
+    /// assert_eq!(StdDeck::empty().iter().count(), 0);
     /// assert_eq!(StdDeck::default().iter().count(), 54);
     /// ```
     #[inline]
@@ -137,7 +146,7 @@ impl<const N: u8> Deck<N> {
     /// use rand::{SeedableRng, rngs::SmallRng};
     ///
     /// let mut deck = StdDeck::default();
-    /// let mut rng = SmallRng::seed_from_u64(7);
+    /// let mut rng = SmallRng::seed_from_u64(420);
     ///
     /// // `draw` returns `None` once the deck is empty, so it can drive a deal loop.
     /// while let Some(card) = deck.draw(&mut rng) {
@@ -153,11 +162,42 @@ impl<const N: u8> Deck<N> {
         let k = rng.random_range(0..self.remaining());
         let bit = select_nth_set(self.mask, k);
         self.mask &= !bit;
-        #[allow(clippy::cast_possible_truncation)] // N <= 64, so the bit index fits in u8.
-        Some(bit.trailing_zeros() as u8)
+        Some(card_id(bit))
     }
 
-    /// Draw up to `count` cards into `out`.
+    /// Draws one random card from a subset of the deck, removing it.
+    ///
+    /// Returns `None` if no card of the subset remains. Bits at or above `N`
+    /// in `mask` are ignored.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bitdeck::{StdDeck, stride_mask};
+    /// use rand::{SeedableRng, rngs::SmallRng};
+    ///
+    /// const HEARTS: u64 = stride_mask(26, 1, 13);
+    ///
+    /// let mut deck = StdDeck::default();
+    /// let mut rng = SmallRng::seed_from_u64(420);
+    ///
+    /// let card = deck.draw_in(&mut rng, HEARTS).unwrap();
+    /// assert_eq!(card / 13, 2); // every drawn card is a heart
+    /// assert_eq!(deck.count_in(HEARTS), 12);
+    /// ```
+    #[inline]
+    pub fn draw_in(&mut self, rng: &mut impl Rng, mask: u64) -> Option<u8> {
+        let subset = self.mask & mask;
+        if subset == 0 {
+            return None;
+        }
+        let k = rng.random_range(0..subset.count_ones());
+        let bit = select_nth_set(subset, k);
+        self.mask &= !bit;
+        Some(card_id(bit))
+    }
+
+    /// Draws up to `count` cards into `out`.
     ///
     /// The buffer is cleared first. If the deck runs out before `count` cards
     /// are drawn, the function stops early and returns the number of cards
@@ -171,7 +211,7 @@ impl<const N: u8> Deck<N> {
     /// use rand::{SeedableRng, rngs::SmallRng};
     ///
     /// let mut deck = StdDeck::default();
-    /// let mut rng = SmallRng::seed_from_u64(99);
+    /// let mut rng = SmallRng::seed_from_u64(420);
     /// let mut hand = Vec::new();
     ///
     /// // Ask for 5 cards and check the count to detect a short deck.
@@ -204,6 +244,49 @@ impl<const N: u8> Deck<N> {
         (self.mask >> card) & 1 == 1
     }
 
+    /// Returns `true` if any card of the subset `mask` is still in the deck.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bitdeck::{StdDeck, stride_mask};
+    ///
+    /// const KINGS: u64 = stride_mask(12, 13, 4);
+    ///
+    /// let mut deck = StdDeck::default();
+    /// assert!(deck.contains_any(KINGS));
+    /// ```
+    #[inline]
+    #[must_use]
+    pub const fn contains_any(&self, mask: u64) -> bool {
+        self.mask & mask != 0
+    }
+
+    /// Returns `true` if every card of the subset `mask` is still in the deck.
+    #[inline]
+    #[must_use]
+    pub const fn contains_all(&self, mask: u64) -> bool {
+        self.mask & mask == mask
+    }
+
+    /// Returns how many cards of the subset `mask` are still in the deck.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bitdeck::{StdDeck, stride_mask};
+    ///
+    /// const HEARTS: u64 = stride_mask(26, 1, 13);
+    ///
+    /// let deck = StdDeck::default();
+    /// assert_eq!(deck.count_in(HEARTS), 13);
+    /// ```
+    #[inline]
+    #[must_use]
+    pub const fn count_in(&self, mask: u64) -> u32 {
+        (self.mask & mask).count_ones()
+    }
+
     /// Puts `card` back into the deck. No effect if it is already present.
     ///
     /// # Panics
@@ -228,6 +311,142 @@ impl<const N: u8> Deck<N> {
     }
 }
 
+/// Bitmask of `count` card ids starting at `start`, each `step` apart:
+/// `{start, start + step, ..., start + (count - 1) * step}`.
+///
+/// Masks compose with `|`, `&`, and `!` in const contexts, so irregular
+/// subsets are unions of regular ones.
+///
+/// # Panics
+///
+/// Panics if any selected bit index exceeds 63.
+///
+/// ```
+/// use bitdeck::stride_mask;
+///
+/// const HEARTS: u64 = stride_mask(26, 1, 13);
+/// const KINGS: u64 = stride_mask(12, 13, 4);
+///
+/// assert_eq!(HEARTS.count_ones(), 13);
+/// assert_eq!(KINGS.count_ones(), 4);
+/// // The king of hearts is the only card in both.
+/// assert_eq!((HEARTS & KINGS).trailing_zeros(), 38);
+/// ```
+#[must_use]
+pub const fn stride_mask(start: u8, step: u8, count: u8) -> u64 {
+    let mut mask = 0u64;
+    let mut i = 0u8;
+    while i < count {
+        let index = start + step * i;
+        assert!(index <= 63, "selected card id exceeds bitmask size");
+        mask |= 1u64 << index;
+        i += 1;
+    }
+    mask
+}
+
+/// Defines a card meaning from an enum classifying card ids and derives all
+/// bitmask machinery from a single mapping expression.
+///
+/// You write the enum and how a card id maps to a variant; the macro
+/// generates, for each variant, the bitmask of all card ids that map to it
+/// (computed at compile time by inverting the mapping), plus:
+///
+/// - `from_id(id) -> Self` — the mapping itself; panics on unmapped ids,
+/// - `mask(self) -> u64` — the bitmask of every id with this meaning,
+/// - `ALL: u64` — the bitmask of every id the meaning covers.
+///
+/// The returned masks plug straight into [`Deck::contains_any`],
+/// [`Deck::contains_all`], [`Deck::count_in`], and [`Deck::draw_in`], and
+/// compose with `|`, `&`, and `!` in const contexts.
+///
+/// The mapping is an arbitrary expression over the id, so irregular layouts
+/// (jokers, short decks, non-uniform suits) work as long as unmapped ids
+/// produce an index with no matching variant. `cards` bounds the ids the
+/// mapping must handle; ids at or above it are ignored.
+///
+/// # Examples
+///
+/// ```
+/// use bitdeck::{Deck, meanings};
+///
+/// meanings! {
+///     pub enum Half {
+///         Low,
+///         High,
+///     }
+///     from_id = |id: u8| id / 5;
+///     cards = 10;
+/// }
+///
+/// let mut deck = Deck::<10>::default();
+/// assert_eq!(deck.count_in(Half::Low.mask()), 5);
+/// assert_eq!(Half::from_id(7), Half::High);
+///
+/// deck.remove(0);
+/// assert!(deck.contains_any(Half::Low.mask()));
+/// assert!(!deck.contains_all(Half::ALL));
+/// ```
+#[macro_export]
+macro_rules! meanings {
+    (
+        $(#[$meta:meta])*
+        $vis:vis enum $name:ident {
+            $(
+                $(#[$vmeta:meta])*
+                $variant:ident
+            ),* $(,)?
+        }
+        from_id = |$id:ident : u8| $body:expr;
+        cards = $cards:expr;
+    ) => {
+        $(#[$meta])*
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+        $vis enum $name {
+            $(
+                $(#[$vmeta])*
+                $variant,
+            )*
+        }
+
+        impl $name {
+            /// Returns the meaning of card `id`.
+            ///
+            /// # Panics
+            ///
+            /// Panics if `id` maps to no variant.
+            #[inline]
+            #[must_use]
+            pub const fn from_id(id: u8) -> Self {
+                let index = { let $id = id; $body };
+                $( if index == Self::$variant as u8 { return Self::$variant; } )*
+                panic!(concat!("card id has no ", stringify!($name)))
+            }
+
+            /// Returns the bitmask of every card id with this meaning,
+            /// computed by inverting the id mapping at compile time.
+            #[inline]
+            #[must_use]
+            pub const fn mask(self) -> u64 {
+                let target = self as u8;
+                let mut mask = 0u64;
+                let mut id = 0u8;
+                while id < $cards {
+                    let index = { let $id = id; $body };
+                    if index == target {
+                        mask |= 1u64 << id;
+                    }
+                    id += 1;
+                }
+                mask
+            }
+
+            /// Bitmask of every card id this meaning covers.
+            pub const ALL: u64 = 0u64 $( | Self::$variant.mask() )*;
+        }
+    };
+}
+
 /// Iterator over the cards remaining in a [`Deck`], in ascending card-id
 /// order. Created by [`Deck::iter`].
 #[derive(Clone, Debug)]
@@ -245,8 +464,7 @@ impl Iterator for Iter {
         }
         let bit = self.mask.isolate_lowest_one();
         self.mask &= self.mask - 1;
-        #[allow(clippy::cast_possible_truncation)] // N <= 64, so the bit index fits in u8.
-        Some(bit.trailing_zeros() as u8)
+        Some(card_id(bit))
     }
 
     #[inline]
@@ -264,13 +482,19 @@ impl DoubleEndedIterator for Iter {
         }
         let idx = self.mask.ilog2();
         self.mask &= !(1u64 << idx);
-        #[allow(clippy::cast_possible_truncation)] // N <= 64, so the bit index fits in u8.
-        Some(idx as u8)
+        Some(card_id(1u64 << idx))
     }
 }
 
 impl ExactSizeIterator for Iter {}
 impl core::iter::FusedIterator for Iter {}
+
+#[inline]
+#[allow(clippy::cast_possible_truncation)]
+fn card_id(bit: u64) -> u8 {
+    // A card bit is always one of the 64 bits in the deck mask.
+    bit.trailing_zeros() as u8
+}
 
 impl<const N: u8> IntoIterator for &Deck<N> {
     type Item = u8;
@@ -291,7 +515,6 @@ fn select_nth_set(mask: u64, k: u32) -> u64 {
     );
     #[cfg(target_arch = "x86_64")]
     {
-        // Explore later how much impact this check actually has due to branch prediction.
         if std::arch::is_x86_feature_detected!("bmi2") {
             // SAFETY: BMI2 confirmed at runtime.
             return unsafe { core::arch::x86_64::_pdep_u64(1u64 << k, mask) };
@@ -315,6 +538,36 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "selected card id exceeds bitmask size")]
+    fn stride_mask_panics_when_index_exceeds_bitmask() {
+        let _ = stride_mask(60, 2, 3); // 60, 62, then 64 > 63
+    }
+
+    #[test]
+    #[should_panic(expected = "card id 8 out of range")]
+    fn insert_panics_on_out_of_range_card() {
+        Deck::<8>::default().insert(8);
+    }
+
+    #[test]
+    #[should_panic(expected = "card id 8 out of range")]
+    fn remove_panics_on_out_of_range_card() {
+        Deck::<8>::default().remove(8);
+    }
+
+    #[test]
+    #[should_panic(expected = "deck size must fit in a u64 bitmask")]
+    fn full_mask_panics_above_64() {
+        let _ = full_mask::<65>();
+    }
+
+    #[test]
+    #[should_panic(expected = "card id 4 out of range")]
+    fn contains_panics_on_out_of_range_card() {
+        let _ = Deck::<4>::default().contains(4);
+    }
+
+    #[test]
     fn default_remaining_and_full_mask() {
         assert_eq!(Deck::<1>::default().remaining(), 1);
         assert_eq!(Deck::<13>::default().remaining(), 13);
@@ -325,15 +578,11 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(not(debug_assertions), ignore)]
+    #[should_panic(expected = "bits at or above deck size are not cards")]
     fn from_bits_panics_on_bits_above_size_in_debug() {
-        // In debug builds, high bits are a bug and should panic.
-        // In release builds they are silently masked, so this test does nothing.
-        if cfg!(debug_assertions) {
-            let result = std::panic::catch_unwind(|| {
-                let _ = Deck::<4>::from_bits(u64::MAX);
-            });
-            assert!(result.is_err());
-        }
+        // In release builds high bits are silently masked, so the test is ignored.
+        let _ = Deck::<4>::from_bits(u64::MAX);
     }
 
     #[test]
@@ -363,48 +612,117 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "card id 4 out of range")]
-    fn contains_panics_on_out_of_range_card() {
-        let _ = Deck::<4>::default().contains(4);
-    }
-
-    #[test]
     fn draw_all_cards_leaves_deck_empty() {
-        let mut deck = StdDeck::default();
+        let mut deck = Deck::<32>::default();
         let mut rng = test_rng();
-        let mut drawn = Vec::with_capacity(CARD_COUNT as usize);
+        let mut drawn = Vec::with_capacity(32);
         while let Some(card) = deck.draw(&mut rng) {
             drawn.push(card);
         }
-        assert_eq!(drawn.len(), CARD_COUNT as usize);
         assert!(deck.is_empty());
         drawn.sort_unstable();
-        drawn.dedup();
-        assert_eq!(drawn.len(), CARD_COUNT as usize);
+        assert_eq!(drawn, (0u8..32).collect::<Vec<_>>());
     }
 
     #[test]
-    fn draw_is_deterministic_with_seed() {
-        let mut a = StdDeck::default();
-        let mut b = StdDeck::default();
-        for _ in 0..10 {
-            assert_eq!(a.draw(&mut test_rng()), b.draw(&mut test_rng()));
+    fn draw_from_full_64_deck_exercises_top_bit() {
+        let mut deck = Deck::<64>::default();
+        let mut rng = test_rng();
+        let mut drawn = Vec::with_capacity(64);
+        while let Some(card) = deck.draw(&mut rng) {
+            drawn.push(card);
         }
+        assert!(deck.is_empty());
+        drawn.sort_unstable();
+        assert_eq!(drawn, (0u8..64).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn iter_is_fused_after_exhaustion() {
+        let mut iter = Deck::<4>::empty().iter();
+        assert_eq!(iter.next(), None);
+        assert_eq!(iter.next(), None);
+        assert_eq!(iter.next_back(), None);
+
+        let mut iter = Deck::<2>::default().iter();
+        assert_eq!(iter.next(), Some(0));
+        assert_eq!(iter.next(), Some(1));
+        assert_eq!(iter.next(), None);
+        // Fused: stays `None`, from both ends.
+        assert_eq!(iter.next(), None);
+        assert_eq!(iter.next_back(), None);
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn serde_round_trips_as_transparent_u64() {
+        let mut deck = Deck::<54>::default();
+        deck.remove(0);
+        deck.remove(53);
+        let text = ron::to_string(&deck).unwrap();
+        // `serde(transparent)`: the deck serializes as its raw mask.
+        assert_eq!(text, deck.as_bits().to_string());
+        let restored: Deck<54> = ron::from_str(&text).unwrap();
+        assert_eq!(restored, deck);
+    }
+
+    #[cfg(feature = "bevy")]
+    #[test]
+    fn deck_is_a_usable_bevy_resource() {
+        use bevy_ecs::prelude::*;
+        fn assert_resource<T: Resource>() {}
+        assert_resource::<StdDeck>();
+        assert_resource::<Deck<10>>();
+
+        let mut world = World::new();
+        world.insert_resource(StdDeck::default());
+        assert_eq!(*world.resource::<StdDeck>(), StdDeck::default());
+    }
+
+    #[test]
+    fn draws_are_deterministic_with_seed() {
+        let (mut a, mut b) = (Deck::<16>::default(), Deck::<16>::default());
+        let (mut rng_a, mut rng_b) = (test_rng(), test_rng());
+        for _ in 0..10 {
+            assert_eq!(a.draw(&mut rng_a), b.draw(&mut rng_b));
+        }
+        for _ in 0..4 {
+            assert_eq!(a.draw_in(&mut rng_a, SPREAD), b.draw_in(&mut rng_b, SPREAD));
+        }
+    }
+
+    #[test]
+    fn restock_restores_a_full_deck() {
+        let mut deck = Deck::<16>::default();
+        let _ = deck.draw_into(&mut test_rng(), 10, &mut Vec::new());
+        deck.restock();
+        assert_eq!(deck.remaining(), 16);
+        assert_eq!(deck, Deck::<16>::default());
+    }
+
+    #[test]
+    fn draw_into_clears_buffer_and_draws_requested_count() {
+        let mut deck = Deck::<16>::default();
+        let mut out = vec![255, 254];
+        let drawn = deck.draw_into(&mut test_rng(), 5, &mut out);
+        assert_eq!(drawn, 5);
+        assert_eq!(out.len(), 5);
+        assert_eq!(deck.remaining(), 11);
     }
 
     #[test]
     fn draw_into_stops_when_deck_is_empty() {
-        let mut deck = StdDeck::default();
+        let mut deck = Deck::<16>::default();
         let mut out = Vec::new();
         let drawn = deck.draw_into(&mut test_rng(), 100, &mut out);
-        assert_eq!(drawn, CARD_COUNT as usize);
-        assert_eq!(out.len(), CARD_COUNT as usize);
+        assert_eq!(drawn, 16);
+        assert_eq!(out.len(), 16);
         assert!(deck.is_empty());
     }
 
     #[test]
     fn insert_contains_remove_roundtrip() {
-        let mut deck = StdDeck::empty();
+        let mut deck = Deck::<8>::empty();
         assert!(!deck.contains(7));
 
         deck.insert(7);
@@ -424,21 +742,137 @@ mod tests {
     }
 
     #[test]
-    fn select_nth_set_first_and_last() {
+    fn select_nth_set_selects_kth_set_bit() {
         let mask = 0b1010_1100u64;
-        assert_eq!(select_nth_set(mask, 0), 0b0000_0100);
-        assert_eq!(select_nth_set(mask, 1), 0b0000_1000);
-        assert_eq!(select_nth_set(mask, 2), 0b0010_0000);
-        assert_eq!(select_nth_set(mask, 3), 0b1000_0000);
+        for (k, expected) in [
+            (0, 0b0000_0100),
+            (1, 0b0000_1000),
+            (2, 0b0010_0000),
+            (3, 0b1000_0000),
+        ] {
+            assert_eq!(select_nth_set(mask, k), expected);
+        }
+
+        let full = full_mask::<16>();
+        for k in [0, 1, 5, 14, 15] {
+            assert_eq!(select_nth_set(full, k), 1u64 << k);
+        }
+    }
+
+    // meanings
+
+    const LOW: u64 = stride_mask(0, 1, 4); // ids 0, 1, 2, 3
+    const SPREAD: u64 = stride_mask(1, 3, 4); // ids 1, 4, 7, 10
+    const TAIL: u64 = stride_mask(14, 1, 2); // ids 14, 15
+
+    #[test]
+    fn stride_mask_builds_expected_bits() {
+        assert_eq!(LOW, 0b1111);
+        assert_eq!(SPREAD, (1 << 1) | (1 << 4) | (1 << 7) | (1 << 10));
+        assert_eq!(TAIL, 0b11 << 14);
+        // Masks compose with the usual bitwise operators.
+        let union = LOW | TAIL;
+        assert_eq!(union.count_ones(), 6);
+        assert_eq!((LOW & SPREAD).count_ones(), 1); // only id 1
+        assert_eq!(full_mask::<14>() | TAIL, full_mask::<16>());
     }
 
     #[test]
-    fn select_nth_set_matches_popcount_positions() {
-        let mask = FULL_DECK;
-        for k in [0, 1, 13, 27, 52, 53] {
-            let bit = select_nth_set(mask, k);
-            assert_eq!(bit.count_ones(), 1);
-            assert_eq!(bit.trailing_zeros(), k);
+    fn mask_queries_track_subset_membership() {
+        let mut deck = Deck::<16>::default();
+        assert!(deck.contains_any(LOW));
+        assert!(deck.contains_all(SPREAD));
+        assert_eq!(deck.count_in(SPREAD), 4);
+
+        // Queries ignore mask bits at or above N.
+        assert_eq!(deck.count_in(u64::MAX), 16);
+
+        deck.remove(1);
+        assert!(deck.contains_any(SPREAD));
+        assert!(!deck.contains_all(SPREAD));
+        assert_eq!(deck.count_in(SPREAD), 3);
+
+        for id in 0..4 {
+            deck.remove(id);
         }
+        assert!(!deck.contains_any(LOW));
+        assert_eq!(deck.count_in(LOW), 0);
+        // Id 1 was in both subsets, so only 4 distinct cards were removed.
+        assert_eq!(deck.remaining(), 16 - 4);
+    }
+
+    #[test]
+    fn draw_in_draws_only_from_the_subset_until_it_runs_out() {
+        let mut deck = Deck::<16>::default();
+        let mut rng = test_rng();
+        let mut drawn = Vec::new();
+        while let Some(card) = deck.draw_in(&mut rng, SPREAD) {
+            assert_ne!(SPREAD & (1 << card), 0);
+            drawn.push(card);
+        }
+        assert_eq!(drawn.len(), 4);
+        // Everything else is untouched.
+        assert_eq!(deck.remaining(), 12);
+        assert!(deck.contains_all(TAIL));
+    }
+
+    meanings! {
+        /// Which half of a 16-card deck an id falls in.
+        enum Half {
+            /// Ids 0..8.
+            Low,
+            /// Ids 8..16.
+            High,
+        }
+        from_id = |id: u8| id / 8;
+        cards = 16;
+    }
+
+    meanings! {
+        /// Edge id or middle id?
+        enum Zone {
+            /// Ids 1..15.
+            Middle,
+            /// Ids 0 and 15.
+            Edge,
+        }
+        from_id = |id: u8| if id == 0 || id == 15 { 1 } else { 0 };
+        cards = 16;
+    }
+
+    #[test]
+    fn meanings_derives_masks_by_inverting_the_mapping() {
+        assert_eq!(Half::High.mask(), stride_mask(8, 1, 8));
+        assert_eq!(Half::Low.mask(), stride_mask(0, 1, 8));
+        assert_eq!(Half::ALL, full_mask::<16>());
+        assert_eq!(Zone::Edge.mask(), (1 << 15) | 1);
+        assert_eq!(Zone::ALL, full_mask::<16>());
+    }
+
+    #[test]
+    fn meanings_from_id_round_trips_through_masks() {
+        for id in 0..16 {
+            let half = Half::from_id(id);
+            assert_ne!(half.mask() & (1 << id), 0);
+        }
+        assert_eq!(Half::from_id(9), Half::High);
+        assert_eq!(Zone::from_id(15), Zone::Edge);
+        assert_eq!(Zone::from_id(7), Zone::Middle);
+    }
+
+    #[test]
+    #[should_panic(expected = "card id has no Half")]
+    fn meanings_from_id_panics_on_unmapped_id() {
+        let _ = Half::from_id(16); // beyond the covered ids
+    }
+
+    #[test]
+    fn meanings_plug_into_deck_queries() {
+        let mut deck = Deck::<16>::default();
+        assert_eq!(deck.count_in(Half::High.mask()), 8);
+        let mut rng = test_rng();
+        let edge = deck.draw_in(&mut rng, Zone::Edge.mask()).unwrap();
+        assert!(edge == 0 || edge == 15);
+        assert_eq!(deck.count_in(Zone::Edge.mask()), 1);
     }
 }

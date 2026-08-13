@@ -1,16 +1,23 @@
-//! Example: deal cards to two players until the deck is nearly exhausted.
+//! Example: deal cards to two players until the deck is nearly exhausted,
+//! then answer suit/rank questions and draw by meaning — all bitmask ops.
 //!
 //! Run with: cargo run --example cards
 
-use bitdeck::StdDeck;
+use bitdeck::{StdDeck, meanings, stride_mask};
 use rand::{SeedableRng, rngs::SmallRng};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Suit {
-    Clubs,
-    Diamonds,
-    Hearts,
-    Spades,
+// Primary meanings: Suit and Rank.
+// These map every card id 0..52 to exactly one variant.
+meanings! {
+    /// The four standard suits.
+    enum Suit {
+        Clubs,
+        Diamonds,
+        Hearts,
+        Spades,
+    }
+    from_id = |id: u8| id / 13;
+    cards = 52;
 }
 
 impl Suit {
@@ -22,73 +29,36 @@ impl Suit {
             Suit::Spades => "♠",
         }
     }
-
-    fn from_id(id: u8) -> Self {
-        match id / 13 {
-            0 => Suit::Clubs,
-            1 => Suit::Diamonds,
-            2 => Suit::Hearts,
-            3 => Suit::Spades,
-            _ => panic!("invalid suit for card id {id}"),
-        }
-    }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Rank {
-    Ace,
-    Two,
-    Three,
-    Four,
-    Five,
-    Six,
-    Seven,
-    Eight,
-    Nine,
-    Ten,
-    Jack,
-    Queen,
-    King,
+meanings! {
+    /// The 13 ranks.
+    enum Rank {
+        Ace,
+        Two,
+        Three,
+        Four,
+        Five,
+        Six,
+        Seven,
+        Eight,
+        Nine,
+        Ten,
+        Jack,
+        Queen,
+        King,
+    }
+    from_id = |id: u8| id % 13;
+    cards = 52;
 }
 
-impl Rank {
-    fn name(self) -> &'static str {
-        match self {
-            Rank::Ace => "A",
-            Rank::Two => "2",
-            Rank::Three => "3",
-            Rank::Four => "4",
-            Rank::Five => "5",
-            Rank::Six => "6",
-            Rank::Seven => "7",
-            Rank::Eight => "8",
-            Rank::Nine => "9",
-            Rank::Ten => "10",
-            Rank::Jack => "J",
-            Rank::Queen => "Q",
-            Rank::King => "K",
-        }
-    }
+// Joker Mask
+const JOKER_START: u8 = 52;
+const JOKERS: u64 = stride_mask(JOKER_START, 1, 2);
 
-    fn from_id(id: u8) -> Self {
-        match id % 13 {
-            0 => Rank::Ace,
-            1 => Rank::Two,
-            2 => Rank::Three,
-            3 => Rank::Four,
-            4 => Rank::Five,
-            5 => Rank::Six,
-            6 => Rank::Seven,
-            7 => Rank::Eight,
-            8 => Rank::Nine,
-            9 => Rank::Ten,
-            10 => Rank::Jack,
-            11 => Rank::Queen,
-            12 => Rank::King,
-            _ => panic!("invalid rank for card id {id}"),
-        }
-    }
-}
+// Composed Color masks.
+const RED: u64 = Suit::Diamonds.mask() | Suit::Hearts.mask();
+const BLACK: u64 = Suit::Clubs.mask() | Suit::Spades.mask();
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Card {
@@ -99,15 +69,14 @@ enum Card {
 impl Card {
     fn from_id(id: u8) -> Self {
         match id {
-            52 => Card::Joker(0),
-            53 => Card::Joker(1),
+            id if id >= JOKER_START => Card::Joker(id - JOKER_START),
             _ => Card::Standard(Suit::from_id(id), Rank::from_id(id)),
         }
     }
 
     fn name(self) -> String {
         match self {
-            Card::Standard(suit, rank) => format!("{}{}", rank.name(), suit.symbol()),
+            Card::Standard(suit, rank) => format!("{:#?}{}", rank, suit.symbol()),
             Card::Joker(n) => format!("Joker {n}"),
         }
     }
@@ -121,13 +90,20 @@ fn hand_names(hand: &[u8]) -> String {
 }
 
 fn main() {
-    let mut rng = SmallRng::seed_from_u64(42);
+    let mut rng = SmallRng::seed_from_u64(420);
     let mut deck = StdDeck::default();
 
     println!("Full deck has {} cards.", deck.remaining());
 
+    // Remove Jokers before dealing.
+    let mut jokers = Vec::new();
+    while let Some(id) = deck.draw_in(&mut rng, JOKERS) {
+        jokers.push(Card::from_id(id).name());
+    }
+    println!("\nDrew {} jokers: {}", jokers.len(), jokers.join(", "));
+
     // Deal 5 cards to each of two players, round by round, until the deck
-    // cannot satisfy both hands. With 54 cards this leaves 4 cards unused.
+    // cannot satisfy both hands. With 52 cards this leaves 2 cards unused.
     let hand_size: usize = 5;
     let mut player_a: Vec<Vec<u8>> = Vec::new();
     let mut player_b: Vec<Vec<u8>> = Vec::new();
@@ -153,6 +129,9 @@ fn main() {
         deck.remaining()
     );
 
+    println!("\nSpades left: {}", deck.count_in(Suit::Spades.mask()));
+    println!("Queens left: {}", deck.count_in(Rank::Queen.mask()));
+
     // Leftover cards.
     let remaining: Vec<u8> = deck.iter().collect();
     println!("\nRemaining cards:");
@@ -160,7 +139,17 @@ fn main() {
         println!("  {:>8} (id {:>2})", Card::from_id(*id).name(), id);
     }
 
-    // A fresh restock.
+    // Restock and draw all black cards.
     deck.restock();
-    println!("After restock: {} cards.", deck.remaining());
+    println!("Restocked.");
+    let mut black = Vec::new();
+    while let Some(id) = deck.draw_in(&mut rng, BLACK) {
+        black.push(Card::from_id(id).name());
+    }
+    println!("Drew {} black cards", black.len());
+    println!(
+        "Black left: {}; Red left: {}",
+        deck.count_in(BLACK),
+        deck.count_in(RED)
+    );
 }
