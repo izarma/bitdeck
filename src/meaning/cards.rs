@@ -2,10 +2,18 @@
 //!
 //! Card ids `0..=51` are standard cards (`suit = id / 13`, `rank = id % 13`);
 //! ids `52` and `53` are jokers. Jokers are unmapped in every meaning here, so
-//! [`Suit::from_id`], [`Rank::from_id`], and [`Color::from_id`] panic for them.
-//! Handle them separately, for example with [`JOKERS`].
+//! [`crate::cards::Suit::from_id`], [`crate::cards::Rank::from_id`], and
+//! [`crate::cards::Color::from_id`] panic for them. Handle them separately,
+//! for example with [`crate::cards::JOKERS`].
 
-use crate::{meanings, stride_mask};
+use crate::{Deck, meaning::stride_mask, meanings};
+
+/// Number of cards in a [`StdDeck`].
+pub const CARD_COUNT: u8 = 54;
+/// A standard 52-card deck plus two jokers (`Deck<54>`).
+pub type StdDeck = Deck<CARD_COUNT>;
+/// Bitmask with all [`CARD_COUNT`] bits set; the initial state of a full [`StdDeck`].
+pub const FULL_DECK: u64 = crate::full_mask::<CARD_COUNT>();
 
 meanings! {
     /// The four standard suits (`id / 13`).
