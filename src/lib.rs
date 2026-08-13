@@ -1,6 +1,7 @@
 #![warn(missing_docs)]
 #![doc = include_str!("../README.md")]
 
+#[cfg(feature = "rand")]
 use rand::{Rng, RngExt};
 
 /// Standard-card suits, ranks, colors, and predefined masks.
@@ -226,6 +227,7 @@ impl<const N: u8> Deck<N> {
     /// Randomly selects a remaining card without removing it.
     ///
     /// Returns `None` if the deck is empty.
+    #[cfg(feature = "rand")]
     #[inline]
     pub fn peek(&self, rng: &mut impl Rng) -> Option<u8> {
         self.peek_in(rng, full_mask::<N>())
@@ -234,6 +236,7 @@ impl<const N: u8> Deck<N> {
     /// Randomly selects a remaining card from `mask` without removing it.
     ///
     /// Returns `None` if no selected card remains.
+    #[cfg(feature = "rand")]
     #[inline]
     pub fn peek_in(&self, rng: &mut impl Rng, mask: u64) -> Option<u8> {
         let subset = self.mask & mask;
@@ -263,6 +266,7 @@ impl<const N: u8> Deck<N> {
     ///     let _ = card;
     /// }
     /// ```
+    #[cfg(feature = "rand")]
     #[inline]
     pub fn draw(&mut self, rng: &mut impl Rng) -> Option<u8> {
         if self.mask == 0 {
@@ -294,6 +298,7 @@ impl<const N: u8> Deck<N> {
     /// assert_eq!(card / 13, 2); // every drawn card is a heart
     /// assert_eq!(deck.count_in(HEARTS), 12);
     /// ```
+    #[cfg(feature = "rand")]
     #[inline]
     pub fn draw_in(&mut self, rng: &mut impl Rng, mask: u64) -> Option<u8> {
         let subset = self.mask & mask;
@@ -329,6 +334,7 @@ impl<const N: u8> Deck<N> {
     ///     // Reshuffle, error, or play the partial hand.
     /// }
     /// ```
+    #[cfg(feature = "rand")]
     pub fn draw_into(&mut self, rng: &mut impl Rng, count: usize, out: &mut Vec<u8>) -> usize {
         out.clear();
         out.reserve(count.min(self.remaining() as usize));
@@ -650,8 +656,11 @@ fn select_nth_set(mask: u64, k: u32) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "rand")]
     use rand::{SeedableRng, rngs::SmallRng};
 
+    #[cfg(feature = "rand")]
     fn test_rng() -> SmallRng {
         SmallRng::seed_from_u64(0x1234_5678_9ABC_DEF0)
     }
@@ -731,6 +740,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "rand")]
     fn draw_all_cards_leaves_deck_empty() {
         let mut deck = Deck::<32>::default();
         let mut rng = test_rng();
@@ -744,6 +754,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "rand")]
     fn draw_from_full_64_deck_exercises_top_bit() {
         let mut deck = Deck::<64>::default();
         let mut rng = test_rng();
@@ -799,6 +810,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "rand")]
     fn draws_are_deterministic_with_seed() {
         let (mut a, mut b) = (Deck::<16>::default(), Deck::<16>::default());
         let (mut rng_a, mut rng_b) = (test_rng(), test_rng());
@@ -811,6 +823,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "rand")]
     fn restock_restores_a_full_deck() {
         let mut deck = Deck::<16>::default();
         let _ = deck.draw_into(&mut test_rng(), 10, &mut Vec::new());
@@ -820,6 +833,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "rand")]
     fn draw_into_clears_buffer_and_draws_requested_count() {
         let mut deck = Deck::<16>::default();
         let mut out = vec![255, 254];
@@ -830,6 +844,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "rand")]
     fn draw_into_stops_when_deck_is_empty() {
         let mut deck = Deck::<16>::default();
         let mut out = Vec::new();
@@ -867,7 +882,7 @@ mod tests {
     }
 
     #[test]
-    fn deterministic_and_random_selection_do_not_mutate_the_deck() {
+    fn deterministic_selection_does_not_mutate_the_deck() {
         let deck = Deck::<8>::from_bits(0b1011_0010);
         assert_eq!(deck.first(), Some(1));
         assert_eq!(deck.last(), Some(7));
@@ -875,7 +890,18 @@ mod tests {
         assert_eq!(deck.nth(1), Some(4));
         assert_eq!(deck.nth(3), Some(7));
         assert_eq!(deck.nth(4), None);
+        assert_eq!(deck, Deck::<8>::from_bits(0b1011_0010));
 
+        let empty = Deck::<8>::empty();
+        assert_eq!(empty.first(), None);
+        assert_eq!(empty.last(), None);
+        assert_eq!(empty.nth(0), None);
+    }
+
+    #[test]
+    #[cfg(feature = "rand")]
+    fn random_selection_does_not_mutate_the_deck() {
+        let deck = Deck::<8>::from_bits(0b1011_0010);
         let mut rng = test_rng();
         let before = deck;
         assert!(matches!(deck.peek(&mut rng), Some(1 | 4 | 5 | 7)));
@@ -884,9 +910,6 @@ mod tests {
         assert_eq!(deck, before);
 
         let empty = Deck::<8>::empty();
-        assert_eq!(empty.first(), None);
-        assert_eq!(empty.last(), None);
-        assert_eq!(empty.nth(0), None);
         assert_eq!(empty.peek(&mut rng), None);
     }
 
@@ -980,6 +1003,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "rand")]
     fn draw_in_draws_only_from_the_subset_until_it_runs_out() {
         let mut deck = Deck::<16>::default();
         let mut rng = test_rng();
@@ -1046,8 +1070,15 @@ mod tests {
 
     #[test]
     fn meanings_plug_into_deck_queries() {
-        let mut deck = Deck::<16>::default();
+        let deck = Deck::<16>::default();
         assert_eq!(deck.count_in(Half::High.mask()), 8);
+        assert!(deck.contains_all(Zone::Edge.mask()));
+    }
+
+    #[test]
+    #[cfg(feature = "rand")]
+    fn meanings_plug_into_random_draws() {
+        let mut deck = Deck::<16>::default();
         let mut rng = test_rng();
         let edge = deck.draw_in(&mut rng, Zone::Edge.mask()).unwrap();
         assert!(edge == 0 || edge == 15);

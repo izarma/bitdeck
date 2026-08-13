@@ -11,9 +11,10 @@ Cards are identified by number eg for [`StdDeck`]:
 
 ## Features
 
+- `rand` (default): enables the random draw/peek APIs — [`Deck::draw`], [`Deck::draw_in`], [`Deck::draw_into`], [`Deck::peek`], and [`Deck::peek_in`]. Bring your own RNG implementing `rand::Rng`.
 - `serde`: serialization support for [`Deck<N>`] / [`StdDeck`].
 - `bevy`: derives [`bevy_ecs::prelude::Resource`](https://docs.rs/bevy/latest/bevy/prelude/trait.Resource.html) for [`Deck<N>`] / [`StdDeck`].
-- `cards`: exposes the [`cards`] module with standard-card suits, ranks, colors, and predefined masks.
+- `cards` (default): exposes the [`cards`] module with standard-card suits, ranks, colors, and predefined masks.
 
 ## Properties
 
@@ -25,23 +26,6 @@ Cards are identified by number eg for [`StdDeck`]:
   or the [`meanings!`] macro; compose them with `|`, `&`, and `!`.
 - **Bring your own RNG.** All randomness comes from a caller-supplied `rand`
   RNG; the deck itself holds no RNG state.
-
-## Usage
-
-```rust
-use bitdeck::StdDeck;
-use rand::{SeedableRng, rngs::SmallRng};
-
-let mut rng = SmallRng::seed_from_u64(42);
-let mut deck = StdDeck::default();
-
-// Draw one random card, removing it from the deck.
-let card = deck.draw(&mut rng).unwrap();
-println!("drew card {card}; {} cards remain", deck.remaining());
-```
-
-The RNG-taking APIs accept `&mut impl Rng` from [`rand`] 0.10, so any source
-implementing `rand::Rng` plugs in directly.
 
 ## Meanings: suits and ranks as bitmasks
 
