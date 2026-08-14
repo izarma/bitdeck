@@ -209,6 +209,21 @@ fn draw_into_stops_when_deck_is_empty() {
 }
 
 #[test]
+#[cfg(feature = "rand")]
+fn draw_in_into_draws_only_from_subset_and_stops_early() {
+    const SUBSET: u64 = 0b0000_1010_0000_1010; // ids 1, 3, 9, 11
+
+    let mut deck = Deck::<16>::default();
+    let mut out = vec![255, 254];
+    let drawn = deck.draw_in_into(&mut test_rng(), SUBSET, 10, &mut out);
+    assert_eq!(drawn, 4);
+    assert_eq!(out.len(), 4);
+    assert!(out.iter().all(|c| SUBSET & (1 << c) != 0));
+    assert_eq!(deck.remaining(), 12);
+    assert!(!deck.contains_any(SUBSET));
+}
+
+#[test]
 fn bulk_mutations_ignore_out_of_range_bits_and_report_removals() {
     let mut deck = Deck::<8>::empty();
     deck.insert_all(0b1_0000_1010);
@@ -294,6 +309,30 @@ fn insert_contains_remove_roundtrip() {
 
     // Removing an absent card reports it.
     assert!(!deck.remove(7));
+}
+
+#[test]
+fn is_full_tracks_complete_deck() {
+    let full = Deck::<8>::default();
+    assert!(full.is_full());
+    assert!(!Deck::<8>::empty().is_full());
+
+    let mut deck = Deck::<8>::default();
+    deck.remove(3);
+    assert!(!deck.is_full());
+    deck.insert(3);
+    assert!(deck.is_full());
+}
+
+#[test]
+fn toggle_flips_card_presence() {
+    let mut deck = Deck::<8>::empty();
+    assert!(deck.toggle(3));
+    assert!(deck.contains(3));
+    assert!(!deck.toggle(3));
+    assert!(!deck.contains(3));
+    assert!(deck.toggle(3));
+    assert_eq!(deck.remaining(), 1);
 }
 
 #[test]

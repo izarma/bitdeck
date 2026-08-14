@@ -1,13 +1,13 @@
 # bitdeck
 
-bitdeck is a fixed-capacity (N ≤ 64) **Bitmask**. `Deck<N>` stores subset membership as a single `u64`, enabling O(1) deterministic subset queries, bulk mutations, and (with the `rand` feature) uniform random draws without replacement and non-destructive peeks.
+bitdeck is a fixed-capacity (N ≤ 64) **Bitmask**. `Deck<N>` stores subset membership as a single `u64`, enabling deterministic subset queries, bulk mutations, and (with the `rand` feature) uniform random draws without replacement and non-destructive peeks.
 
-While it includes a standard 54-card deck preset (`StdDeck`) behind the `cards` feature, `Deck<N>` is completely generic and can be used for loot tables, card decks, turn based action queues, gacha pools etc.
+While it includes a standard 54-card deck preset (`StdDeck`) behind the `cards` feature, `Deck<N>` is completely generic and can be used for loot tables, turn based action queues, shuffle bags etc.
 
 ## Features
 
 - `rand` (default): enables the random draw/peek APIs — `Deck::draw`, `Deck::draw_in`, `Deck::draw_into`, `Deck::peek`, and `Deck::peek_in`.
-- `serde`: serialization support for [`Deck<N>`].
+- `serde`: transparent `u64` bitmask serialization for `Deck<N>`.
 - `bevy`: derives [`bevy_ecs::prelude::Resource`](https://docs.rs/bevy/latest/bevy/prelude/trait.Resource.html) for [`Deck<N>`].
 - `cards`: exposes the `cards` module with `StdDeck` alongside its meaning subsets - standard-card suits, ranks, colors, and predefined masks.
 
@@ -26,10 +26,18 @@ While it includes a standard 54-card deck preset (`StdDeck`) behind the `cards` 
 ## Bitmask operations
 
 `Deck<N>` is just a `u64` bitmask. Every operation below is a thin wrapper
-around a bitwise read or mutation on that mask, which is why subset queries,
-bulk updates, and random draws are all O(1).
+around a bitwise read or mutation on that mask.
+- Bitwise subset queries and bulk mutations are O(1).
+- Random draws/peeks are uniform without replacement:
+  O(1) on x86_64 with BMI2, and O(N) with the portable fallback.
 
 <!-- bitdeck-op-table-start -->
+
+Bits at or above `N` in any subset mask are ignored (the `Deck` struct docs
+state this for all subset APIs). The exception is [`Deck::from_bits`], which
+also panics in debug builds if out-of-range bits are set.
+
+#### Constructors & conversion
 
 | Operation | Mask effect | Description | Feature | Notes |
 |-----------|-------------|-------------|---------|-------|
@@ -38,17 +46,41 @@ bulk updates, and random draws are all O(1).
 | [`Deck::empty`] | `mask = 0` | Constructor: an empty deck. | | Compile-time error if `N > 64`. |
 | [`Deck::from_bits`] | `mask = m & full_mask::<N>()` | Wrap a raw bitmask; high bits are masked off. | | Round-trips with `as_bits`; panics in debug if high bits are set. |
 | [`Deck::as_bits`] | returns `mask` | Get the raw remaining bitmask. | | Round-trips with `from_bits`. |
+
+#### Mutations
+
+| Operation | Mask effect | Description | Feature | Notes |
+|-----------|-------------|-------------|---------|-------|
 | [`Deck::restock`] | `mask = full_mask::<N>()` | Restore the deck to full. | | |
-| [`Deck::insert_all`] | `mask = mask \| (m & full_mask::<N>())` | Add every selected card back. | | Ignores bits at or above `N`. |
-| [`Deck::remove_all`] | `mask &= !m` | Remove every selected card; return count removed. | | Ignores bits at or above `N`. |
-| [`Deck::retain`] | `mask &= m` | Keep only the selected remaining cards. | | Ignores bits at or above `N`. |
+| [`Deck::insert_all`] | `mask = mask \| (m & full_mask::<N>())` | Add every selected card back. | | |
+| [`Deck::remove_all`] | `mask &= !m` | Remove every selected remaining card; return count removed. | | |
+| [`Deck::retain`] | `mask &= m` | Keep only the selected remaining cards. | | |
+| [`Deck::insert`] | `mask = mask \| (1 << c)` | Put one card back. | | Panics if `card >= N`. |
+| [`Deck::remove`] | `mask &= !(1 << c)` | Remove one card; return whether it was present. | | Panics if `card >= N`. |
+| [`Deck::toggle`] | `mask ^= (1 << c)` | Flip one card’s presence; return new state. | | Panics if `card >= N`. |
+
+#### Cardinality & drawn state
+
+| Operation | Mask effect | Description | Feature | Notes |
+|-----------|-------------|-------------|---------|-------|
 | [`Deck::remaining`] | `mask.count_ones()` | Count cards remaining. | | |
 | [`Deck::is_empty`] | `mask == 0` | `true` if no cards remain. | | |
+| [`Deck::is_full`] | `mask == full_mask::<N>()` | `true` if every card remains. | | |
 | [`Deck::drawn_mask`] | `!mask & full_mask::<N>()` | Bitmask of cards that have been drawn. | | |
 | [`Deck::drawn_count`] | `N - mask.count_ones()` | Count cards that have been drawn. | | |
+
+#### Iteration
+
+| Operation | Mask effect | Description | Feature | Notes |
+|-----------|-------------|-------------|---------|-------|
 | [`Deck::iter_drawn`] | iterates `!mask & full_mask::<N>()` | Iterate drawn card ids in ascending order. | | |
 | [`Deck::iter_in`] | iterates `mask & m` | Iterate remaining ids inside a subset. | | |
 | [`Deck::iter`] | iterates `mask` | Iterate all remaining ids in ascending order. | | |
+
+#### Selection
+
+| Operation | Mask effect | Description | Feature | Notes |
+|-----------|-------------|-------------|---------|-------|
 | [`Deck::nth`] | `select_nth_set(mask, k)` | `k`th remaining card by id. | | Returns `None` if `k >= remaining`. |
 | [`Deck::first`] | `mask.isolate_lowest_one()` | Lowest-id remaining card. | | Returns `None` if empty. |
 | [`Deck::last`] | `mask.ilog2()` | Highest-id remaining card. | | Returns `None` if empty. |
@@ -57,12 +89,16 @@ bulk updates, and random draws are all O(1).
 | [`Deck::draw`] | clears one random set bit | Randomly draw and remove one card. | `rand` | Returns `None` if empty. |
 | [`Deck::draw_in`] | clears one random bit from `mask & m` | Randomly draw from a subset. | `rand` | Returns `None` if no selected card remains. |
 | [`Deck::draw_into`] | repeated [`Deck::draw`] | Draw up to `count` cards into a buffer. | `rand` | Clears `out` first; stops early if deck runs out. |
+| [`Deck::draw_in_into`] | repeated [`Deck::draw_in`] | Draw up to `count` cards from a subset into a buffer. | `rand` | Clears `out` first; stops early if subset runs out. |
+
+#### Queries
+
+| Operation | Mask effect | Description | Feature | Notes |
+|-----------|-------------|-------------|---------|-------|
 | [`Deck::contains`] | `(mask >> c) & 1 == 1` | `true` if card `c` is still present. | | Panics if `card >= N`. |
 | [`Deck::contains_any`] | `mask & m != 0` | `true` if any selected card remains. | | |
-| [`Deck::contains_all`] | `mask & m == m & full_mask::<N>()` | `true` if every selected card remains. | | Ignores bits at or above `N`. |
+| [`Deck::contains_all`] | `mask & m == m & full_mask::<N>()` | `true` if every selected card remains. | | |
 | [`Deck::count_in`] | `(mask & m).count_ones()` | Count remaining cards in a subset. | | |
 | [`Deck::chance`] | `count_in(m) / mask.count_ones()` | Probability a random remaining card is in subset. | | Returns `NaN` when empty. |
-| [`Deck::insert`] | `mask = mask \| (1 << c)` | Put one card back. | | Panics if `card >= N`. |
-| [`Deck::remove`] | `mask &= !(1 << c)` | Remove one card; return whether it was present. | | Panics if `card >= N`. |
 
 <!-- bitdeck-op-table-end -->

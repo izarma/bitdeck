@@ -21,7 +21,7 @@ pub const fn full_mask<const N: u8>() -> u64 {
 ///
 /// Subset APIs accept a `u64` mask of card ids, typically built with
 /// [`crate::stride_mask`] or [`crate::meanings!`]. Bits at or above `N` are
-/// ignored by subset queries and draws.
+/// ignored by subset queries, mutations, and draws.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "bevy", derive(bevy_ecs::prelude::Resource))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -95,8 +95,6 @@ impl<const N: u8> Deck<N> {
     }
 
     /// Puts every card selected by `mask` back into the deck.
-    ///
-    /// Bits at or above `N` are ignored.
     #[inline]
     pub const fn insert_all(&mut self, mask: u64) {
         self.mask |= mask & full_mask::<N>();
@@ -104,8 +102,6 @@ impl<const N: u8> Deck<N> {
 
     /// Removes every remaining card selected by `mask` and returns how many
     /// were removed.
-    ///
-    /// Bits at or above `N` are ignored.
     #[inline]
     pub const fn remove_all(&mut self, mask: u64) -> u32 {
         let removed = self.count_in(mask);
@@ -114,8 +110,6 @@ impl<const N: u8> Deck<N> {
     }
 
     /// Keeps only the remaining cards selected by `mask`.
-    ///
-    /// Bits at or above `N` are ignored.
     #[inline]
     pub const fn retain(&mut self, mask: u64) {
         self.mask &= mask;
@@ -133,6 +127,13 @@ impl<const N: u8> Deck<N> {
     #[must_use]
     pub const fn is_empty(&self) -> bool {
         self.mask == 0
+    }
+
+    /// Returns `true` if every card remains in the deck.
+    #[inline]
+    #[must_use]
+    pub const fn is_full(&self) -> bool {
+        self.mask == full_mask::<N>()
     }
 
     /// Returns the raw bitmask of cards that have been drawn.
@@ -254,19 +255,12 @@ impl<const N: u8> Deck<N> {
     #[cfg(feature = "rand")]
     #[inline]
     pub fn draw(&mut self, rng: &mut impl Rng) -> Option<u8> {
-        if self.mask == 0 {
-            return None;
-        }
-        let k = rng.random_range(0..self.remaining());
-        let bit = select_nth_set(self.mask, k);
-        self.mask &= !bit;
-        Some(card_id(bit))
+        self.draw_in(rng, full_mask::<N>())
     }
 
     /// Draws one random card from a subset of the deck, removing it.
     ///
-    /// Returns `None` if no card of the subset remains. Bits at or above `N`
-    /// in `mask` are ignored.
+    /// Returns `None` if no card of the subset remains.
     ///
     /// # Examples
     ///
@@ -321,10 +315,45 @@ impl<const N: u8> Deck<N> {
     /// ```
     #[cfg(feature = "rand")]
     pub fn draw_into(&mut self, rng: &mut impl Rng, count: usize, out: &mut Vec<u8>) -> usize {
+        self.draw_in_into(rng, full_mask::<N>(), count, out)
+    }
+
+    /// Draws up to `count` cards from a subset of the deck into `out`.
+    ///
+    /// The buffer is cleared first. If the subset runs out before `count` cards
+    /// are drawn, the function stops early and returns the number of cards
+    /// actually drawn.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bitdeck::{Deck, stride_mask};
+    /// use rand::{SeedableRng, rngs::SmallRng};
+    ///
+    /// const HEARTS: u64 = stride_mask(26, 1, 13);
+    ///
+    /// let mut deck = Deck::<54>::default();
+    /// let mut rng = SmallRng::seed_from_u64(420);
+    /// let mut hand = Vec::new();
+    ///
+    /// let drawn = deck.draw_in_into(&mut rng, HEARTS, 5, &mut hand);
+    /// assert_eq!(drawn, 5);
+    /// for card in &hand {
+    ///     assert_eq!(card / 13, 2); // every drawn card is a heart
+    /// }
+    /// ```
+    #[cfg(feature = "rand")]
+    pub fn draw_in_into(
+        &mut self,
+        rng: &mut impl Rng,
+        mask: u64,
+        count: usize,
+        out: &mut Vec<u8>,
+    ) -> usize {
         out.clear();
-        out.reserve(count.min(self.remaining() as usize));
+        out.reserve(count.min(self.count_in(mask) as usize));
         for _ in 0..count {
-            match self.draw(rng) {
+            match self.draw_in(rng, mask) {
                 Some(c) => out.push(c),
                 None => break,
             }
@@ -421,6 +450,30 @@ impl<const N: u8> Deck<N> {
         let had = self.contains(card);
         self.mask &= !(1u64 << card);
         had
+    }
+
+    /// Flips whether `card` is in the deck and returns its new presence.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bitdeck::Deck;
+    ///
+    /// let mut deck = Deck::<8>::empty();
+    /// assert!(deck.toggle(3));
+    /// assert!(deck.contains(3));
+    /// assert!(!deck.toggle(3));
+    /// assert!(!deck.contains(3));
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if `card >= N`.
+    #[inline]
+    pub fn toggle(&mut self, card: u8) -> bool {
+        assert!(card < N, "card id {card} out of range");
+        self.mask ^= 1u64 << card;
+        (self.mask >> card) & 1 == 1
     }
 }
 
