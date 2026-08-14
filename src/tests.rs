@@ -460,3 +460,138 @@ fn meanings_plug_into_random_draws() {
     assert!(edge == 0 || edge == 15);
     assert_eq!(deck.count_in(Zone::Edge.mask()), 1);
 }
+
+// Drift guard: keep the README bitmask-operations table in sync with src/deck.rs.
+
+/// Every public `Deck<N>` operation must be listed in the README bitmask-operations table.
+///
+/// This test prevents drift between `src/deck.rs` and `README.md`. If you add a
+/// new public method, add a row to the table between the markers.
+#[test]
+fn readme_bitmask_table_covers_all_deck_methods() {
+    let deck_rs = include_str!("deck.rs");
+    let readme = include_str!("../README.md");
+
+    let mut expected = extract_inherent_methods(deck_rs);
+    // Constructors / free functions that live outside the inherent impl block.
+    expected.push("full_mask".to_string());
+    expected.push("default".to_string());
+
+    let table = readme
+        .split("<!-- bitdeck-op-table-start -->")
+        .nth(1)
+        .and_then(|s| s.split("<!-- bitdeck-op-table-end -->").next())
+        .expect(
+            "README.md is missing the bitmask operation table markers \
+             (<!-- bitdeck-op-table-start --> ... <!-- bitdeck-op-table-end -->)",
+        );
+
+    let missing: Vec<_> = expected
+        .iter()
+        .filter(|name| !table.contains(name.as_str()))
+        .collect();
+
+    assert!(
+        missing.is_empty(),
+        "README.md bitmask operation table is missing these operations: {missing:?}\n\
+         Add a row for each one between the table markers."
+    );
+}
+
+fn extract_inherent_methods(source: &str) -> Vec<String> {
+    let impl_sig = "impl<const N: u8> Deck<N>";
+    let start = source
+        .find(impl_sig)
+        .expect("inherent `impl<const N: u8> Deck<N>` not found")
+        + impl_sig.len();
+    let rest = &source[start..];
+    let brace_offset = rest
+        .find('{')
+        .expect("inherent impl block has no opening brace");
+    let body_start = start + brace_offset + 1;
+    let body_end = find_matching_brace(source, body_start);
+    let body = &source[body_start..body_end];
+
+    body.lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            let after = trimmed
+                .strip_prefix("pub const fn ")
+                .or_else(|| trimmed.strip_prefix("pub fn "));
+            after.map(|s| {
+                s.split_whitespace()
+                    .next()
+                    .expect("pub fn line has no name")
+                    .split('(')
+                    .next()
+                    .expect("pub fn name has no (")
+                    .to_string()
+            })
+        })
+        .collect()
+}
+
+fn find_matching_brace(source: &str, body_start: usize) -> usize {
+    let mut depth = 1usize;
+    let mut pos = body_start;
+    while depth > 0 {
+        let c = source[pos..]
+            .chars()
+            .next()
+            .expect("EOF while scanning impl block");
+        let c_len = c.len_utf8();
+        pos += c_len;
+
+        match c {
+            '/' => {
+                if source[pos..].starts_with("//") {
+                    // Line comment: skip to end of line.
+                    while let Some(c2) = source[pos..].chars().next() {
+                        pos += c2.len_utf8();
+                        if c2 == '\n' {
+                            break;
+                        }
+                    }
+                } else if source[pos..].starts_with("/*") {
+                    // Block comment: skip to closing */.
+                    pos += 2;
+                    while !source[pos..].starts_with("*/") {
+                        let c2 = source[pos..].chars().next().expect("EOF in block comment");
+                        pos += c2.len_utf8();
+                    }
+                    pos += 2;
+                }
+            }
+            '"' => {
+                // String literal.
+                loop {
+                    let c2 = source[pos..].chars().next().expect("EOF in string literal");
+                    pos += c2.len_utf8();
+                    if c2 == '\\' {
+                        let c3 = source[pos..].chars().next().expect("EOF in escape");
+                        pos += c3.len_utf8();
+                    } else if c2 == '"' {
+                        break;
+                    }
+                }
+            }
+            '\'' => {
+                // Character literal.
+                loop {
+                    let c2 = source[pos..].chars().next().expect("EOF in char literal");
+                    pos += c2.len_utf8();
+                    if c2 == '\\' {
+                        let c3 = source[pos..].chars().next().expect("EOF in escape");
+                        pos += c3.len_utf8();
+                    } else if c2 == '\'' {
+                        break;
+                    }
+                }
+            }
+            '{' => depth += 1,
+            '}' => depth -= 1,
+            _ => {}
+        }
+    }
+    pos - 1
+}

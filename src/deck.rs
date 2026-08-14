@@ -424,8 +424,8 @@ impl<const N: u8> Deck<N> {
     }
 }
 
-/// Iterator over the cards remaining in a [`Deck`], in ascending card-id
-/// order. Created by [`Deck::iter`].
+/// Iterator over selected card ids in ascending card-id order. Created by
+/// [`Deck::iter`], [`Deck::iter_in`], and [`Deck::iter_drawn`].
 #[derive(Clone, Debug)]
 pub struct Iter {
     mask: u64,

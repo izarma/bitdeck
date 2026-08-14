@@ -62,6 +62,10 @@ pub const fn stride_mask(start: u8, step: u8, count: u8) -> u64 {
 /// the mapping must handle; ids at or above it are ignored by the generated
 /// `mask` but will panic in `from_id`.
 ///
+/// Variants are assigned indices `0, 1, 2, ...` in declaration order. The
+/// `from_id` expression must return those exact indices — for example, the
+/// first declared variant must map from id `0`.
+///
 /// # Examples
 ///
 /// ```
