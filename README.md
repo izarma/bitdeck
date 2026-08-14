@@ -7,9 +7,12 @@ While it includes a standard 54-card deck preset (`StdDeck`) behind the `cards` 
 ## Features
 
 - `rand` (default): enables the random draw/peek APIs
+- `alloc` (default): enables APIs that use `alloc::vec::Vec` (currently the `*_into` draw/peek helpers). Required by `rand`.
 - `serde`: transparent `u64` bitmask serialization for `Deck<N>`.
 - `bevy`: derives [`bevy_ecs::prelude::Resource`](https://docs.rs/bevy/latest/bevy/prelude/trait.Resource.html) for [`Deck<N>`].
 - `cards`: exposes the `cards` module with `StdDeck` alongside its meaning subsets - standard-card suits, ranks, colors, and predefined masks.
+
+The crate is `no_std`. The default feature set includes `alloc`; disable default features and enable only the features you need for a `no_std` environment without an allocator.
 
 ## Properties
 
@@ -25,6 +28,16 @@ around a bitwise read or mutation on that mask.
 - Bitwise subset queries and bulk mutations are O(1).
 - Random draws/peeks are uniform without replacement:
   O(1) on x86_64 with BMI2, and O(N) with the portable fallback.
+
+Compile with `-C target-feature=+bmi2` to enable the BMI2 fast path at compile
+time (no runtime CPUID check):
+
+```bash
+RUSTFLAGS="-C target-feature=+bmi2" cargo build
+```
+
+Note that this produces a binary that requires BMI2 at runtime; the default
+portable build still auto-detects BMI2 via CPUID and uses it when available.
 
 <!-- bitdeck-op-table-start -->
 

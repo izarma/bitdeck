@@ -1,4 +1,7 @@
 #[cfg(test)]
+use std::prelude::v1::*;
+
+#[cfg(test)]
 #[cfg(feature = "rand")]
 use rand::{SeedableRng, rngs::SmallRng};
 

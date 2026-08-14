@@ -123,11 +123,11 @@ macro_rules! meanings {
             pub const fn from_id(id: u8) -> Self {
                 assert!($cards <= 64, "deck size must fit in a u64 bitmask");
                 if id >= $cards {
-                    panic!("card id out of range");
+                    core::panic!("card id out of range");
                 }
                 let index = { let $id = id; $body };
                 $( if index == Self::$variant as u8 { return Self::$variant; } )*
-                panic!(concat!("card id has no ", stringify!($name)))
+                core::panic!(concat!("card id has no ", stringify!($name)))
             }
 
             /// Returns the bitmask of every card id with this meaning,

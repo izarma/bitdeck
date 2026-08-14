@@ -1,5 +1,8 @@
 #[cfg(feature = "rand")]
-use rand::{Rng, RngExt};
+use {
+    alloc::vec::Vec,
+    rand::{Rng, RngExt},
+};
 
 /// Bitmask with the lowest `N` bits set; every card of a [`Deck<N>`].
 ///
@@ -618,6 +621,70 @@ impl<const N: u8> IntoIterator for &Deck<N> {
     }
 }
 
+/// Check whether the x86 BMI2 instruction set is available.
+///
+/// - Short-circuits on `cfg!(target_feature = "bmi2")` for zero runtime cost
+///   when the target explicitly enables BMI2.
+/// - Caches the CPUID result so repeated checks don't re-execute the
+///   serializing instruction.
+/// - Works around the Skylake erratum (SKL052) where some steppings report
+///   BMI1/BMI2 in CPUID without actually supporting the instructions; on
+///   `GenuineIntel` we additionally require AVX, which every real BMI2 chip has.
+#[cfg(target_arch = "x86_64")]
+#[inline]
+fn bmi2_available() -> bool {
+    use core::sync::atomic::{AtomicU8, Ordering};
+
+    const UNKNOWN: u8 = 0;
+    const NO: u8 = 1;
+    const YES: u8 = 2;
+    static CACHE: AtomicU8 = AtomicU8::new(UNKNOWN);
+
+    if cfg!(target_feature = "bmi2") {
+        return true;
+    }
+
+    match CACHE.load(Ordering::Relaxed) {
+        YES => return true,
+        NO => return false,
+        _ => {}
+    }
+
+    let detected = detect_bmi2();
+    CACHE.store(if detected { YES } else { NO }, Ordering::Relaxed);
+    detected
+}
+
+#[cfg(target_arch = "x86_64")]
+fn detect_bmi2() -> bool {
+    let leaf0 = core::arch::x86_64::__cpuid(0);
+    if leaf0.eax < 7 {
+        return false;
+    }
+
+    let leaf7 = core::arch::x86_64::__cpuid_count(7, 0);
+    if leaf7.ebx & (1 << 8) == 0 {
+        return false;
+    }
+
+    // SKL052: some Skylake steppings set the BMI1/BMI2 CPUID bits without
+    // real support; using the instructions then raises #UD. Every genuine
+    // BMI2-capable Intel chip also reports AVX, so gate on that.
+    let vendor: [u8; 12] = {
+        let mut v = [0u8; 12];
+        v[0..4].copy_from_slice(&leaf0.ebx.to_ne_bytes());
+        v[4..8].copy_from_slice(&leaf0.edx.to_ne_bytes());
+        v[8..12].copy_from_slice(&leaf0.ecx.to_ne_bytes());
+        v
+    };
+    if &vendor == b"GenuineIntel" {
+        let leaf1 = core::arch::x86_64::__cpuid(1);
+        return (leaf1.ecx >> 28) & 1 != 0; // AVX bit
+    }
+
+    true
+}
+
 #[inline]
 pub(crate) fn select_nth_set(mask: u64, k: u32) -> u64 {
     debug_assert!(
@@ -627,7 +694,7 @@ pub(crate) fn select_nth_set(mask: u64, k: u32) -> u64 {
     );
     #[cfg(target_arch = "x86_64")]
     {
-        if std::arch::is_x86_feature_detected!("bmi2") {
+        if bmi2_available() {
             // SAFETY: BMI2 confirmed at runtime.
             return unsafe { core::arch::x86_64::_pdep_u64(1u64 << k, mask) };
         }
