@@ -31,7 +31,7 @@ pub const fn stride_mask(start: u8, step: u8, count: u8) -> u64 {
     let mut mask = 0u64;
     let mut i = 0u8;
     while i < count {
-        let index = start + step * i;
+        let index = start as u32 + step as u32 * i as u32;
         assert!(index <= 63, "selected card id exceeds bitmask size");
         mask |= 1u64 << index;
         i += 1;
@@ -53,7 +53,7 @@ pub const fn stride_mask(start: u8, step: u8, count: u8) -> u64 {
 ///
 /// The returned masks plug straight into [`crate::Deck::contains_any`],
 /// [`crate::Deck::contains_all`], [`crate::Deck::count_in`], and
-/// `crate::Deck::draw_in`, and compose with `|`, `&`, and `!` in const
+/// [`crate::Deck::draw_in`], and compose with `|`, `&`, and `!` in const
 /// contexts.
 ///
 /// The mapping is an arbitrary expression over the id, so irregular layouts
@@ -62,9 +62,9 @@ pub const fn stride_mask(start: u8, step: u8, count: u8) -> u64 {
 /// the mapping must handle; ids at or above it are ignored by the generated
 /// `mask` but will panic in `from_id`.
 ///
-/// Variants are assigned indices `0, 1, 2, ...` in declaration order. The
-/// `from_id` expression must return those exact indices — for example, the
-/// first declared variant must map from id `0`.
+/// Variants get indices `0, 1, 2, ...` in declaration order; `from_id` must
+/// return the index of the variant each id belongs to. (Id 0 may map to any
+/// variant.)
 ///
 /// # Examples
 ///
@@ -110,6 +110,7 @@ macro_rules! meanings {
             )*
         }
 
+        #[allow(dead_code)]
         impl $name {
             /// Returns the meaning of card `id`.
             ///
@@ -120,6 +121,7 @@ macro_rules! meanings {
             #[inline]
             #[must_use]
             pub const fn from_id(id: u8) -> Self {
+                assert!($cards <= 64, "deck size must fit in a u64 bitmask");
                 if id >= $cards {
                     panic!("card id out of range");
                 }
@@ -133,6 +135,7 @@ macro_rules! meanings {
             #[inline]
             #[must_use]
             pub const fn mask(self) -> u64 {
+                assert!($cards <= 64, "deck size must fit in a u64 bitmask");
                 let target = self as u8;
                 let mut mask = 0u64;
                 let mut id = 0u8;

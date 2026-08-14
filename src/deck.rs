@@ -210,6 +210,34 @@ impl<const N: u8> Deck<N> {
         (!self.is_empty()).then(|| self.mask.ilog2() as u8)
     }
 
+    /// Returns the `k`th remaining card selected by `mask`, in ascending
+    /// card-id order.
+    ///
+    /// Returns `None` when `k` is greater than or equal to
+    /// [`count_in(mask)`](Self::count_in).
+    #[inline]
+    #[must_use]
+    pub fn nth_in(&self, mask: u64, k: u32) -> Option<u8> {
+        let subset = self.mask & mask;
+        (k < subset.count_ones()).then(|| card_id(select_nth_set(subset, k)))
+    }
+
+    /// Returns the lowest-id remaining card selected by `mask`.
+    #[inline]
+    #[must_use]
+    pub fn first_in(&self, mask: u64) -> Option<u8> {
+        let subset = self.mask & mask;
+        (subset != 0).then(|| card_id(select_nth_set(subset, 0)))
+    }
+
+    /// Returns the highest-id remaining card selected by `mask`.
+    #[inline]
+    #[must_use]
+    pub fn last_in(&self, mask: u64) -> Option<u8> {
+        let subset = self.mask & mask;
+        (subset != 0).then(|| card_id(select_nth_set(subset, subset.count_ones() - 1)))
+    }
+
     /// Randomly selects a remaining card without removing it.
     ///
     /// Returns `None` if the deck is empty.
@@ -361,6 +389,41 @@ impl<const N: u8> Deck<N> {
         out.len()
     }
 
+    /// Peeks up to `count` random cards into `out` without removing them.
+    ///
+    /// The buffer is cleared first. If fewer than `count` cards remain, all of
+    /// them are peeked. The deck is unchanged.
+    #[cfg(feature = "rand")]
+    pub fn peek_into(&self, rng: &mut impl Rng, count: usize, out: &mut Vec<u8>) -> usize {
+        self.peek_in_into(rng, full_mask::<N>(), count, out)
+    }
+
+    /// Peeks up to `count` random cards from a subset of the deck into `out`,
+    /// without removing them.
+    ///
+    /// The buffer is cleared first. If the subset contains fewer than `count`
+    /// cards, all of them are peeked. The deck is unchanged.
+    #[cfg(feature = "rand")]
+    pub fn peek_in_into(
+        &self,
+        rng: &mut impl Rng,
+        mask: u64,
+        count: usize,
+        out: &mut Vec<u8>,
+    ) -> usize {
+        out.clear();
+        let mut subset = self.mask & mask;
+        let n = count.min(subset.count_ones() as usize);
+        out.reserve(n);
+        for _ in 0..n {
+            let k = rng.random_range(0..subset.count_ones());
+            let bit = select_nth_set(subset, k);
+            out.push(card_id(bit));
+            subset &= !bit;
+        }
+        out.len()
+    }
+
     /// Returns `true` if the given card is still in the deck.
     ///
     /// # Panics
@@ -399,6 +462,16 @@ impl<const N: u8> Deck<N> {
     pub const fn contains_all(&self, mask: u64) -> bool {
         let mask = mask & full_mask::<N>();
         self.mask & mask == mask
+    }
+
+    /// Returns `true` if the remaining cards are a subset of `mask`.
+    ///
+    /// An empty deck is a subset of every mask (vacuously true), matching
+    /// [`contains_all`](Self::contains_all) on an empty deck.
+    #[inline]
+    #[must_use]
+    pub const fn is_subset_of(&self, mask: u64) -> bool {
+        self.mask & !mask == 0
     }
 
     /// Returns how many cards of the subset `mask` are still in the deck.
@@ -474,6 +547,15 @@ impl<const N: u8> Deck<N> {
         assert!(card < N, "card id {card} out of range");
         self.mask ^= 1u64 << card;
         (self.mask >> card) & 1 == 1
+    }
+
+    /// Flips the presence of every card selected by `mask`.
+    ///
+    /// Bits at or above `N` are masked off; toggling `u64::MAX` on a deck with
+    /// `N < 64` only flips the in-range bits.
+    #[inline]
+    pub const fn toggle_all(&mut self, mask: u64) {
+        self.mask ^= mask & full_mask::<N>();
     }
 }
 

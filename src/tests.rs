@@ -20,6 +20,12 @@ fn stride_mask_panics_when_index_exceeds_bitmask() {
 }
 
 #[test]
+#[should_panic(expected = "selected card id exceeds bitmask size")]
+fn stride_mask_panics_with_large_step() {
+    let _ = stride_mask(60, 200, 2); // 60, then 260 > 63
+}
+
+#[test]
 #[should_panic(expected = "card id 8 out of range")]
 fn insert_panics_on_out_of_range_card() {
     Deck::<8>::default().insert(8);
@@ -268,6 +274,21 @@ fn deterministic_selection_does_not_mutate_the_deck() {
 }
 
 #[test]
+fn selection_in_subset_obeys_mask_order() {
+    let deck = Deck::<8>::from_bits(0b1011_0010);
+    assert_eq!(deck.first_in(0b1111_0000), Some(4));
+    assert_eq!(deck.last_in(0b1111_0000), Some(7));
+    assert_eq!(deck.nth_in(0b1111_0000, 0), Some(4));
+    assert_eq!(deck.nth_in(0b1111_0000, 1), Some(5));
+    assert_eq!(deck.nth_in(0b1111_0000, 2), Some(7));
+    assert_eq!(deck.nth_in(0b1111_0000, 3), None);
+
+    assert_eq!(deck.first_in(0b0000_0000), None);
+    assert_eq!(deck.last_in(0b0000_0000), None);
+    assert_eq!(deck.nth_in(0b0000_0000, 0), None);
+}
+
+#[test]
 #[cfg(feature = "rand")]
 fn random_selection_does_not_mutate_the_deck() {
     let deck = Deck::<8>::from_bits(0b1011_0010);
@@ -283,11 +304,64 @@ fn random_selection_does_not_mutate_the_deck() {
 }
 
 #[test]
+#[cfg(feature = "rand")]
+fn peek_into_leaves_deck_unchanged_and_fills_buffer() {
+    let deck = Deck::<16>::default();
+    let mut rng = test_rng();
+    let mut out = vec![255, 254];
+    let peeked = deck.peek_into(&mut rng, 5, &mut out);
+    assert_eq!(peeked, 5);
+    assert_eq!(out.len(), 5);
+    assert_eq!(deck, Deck::<16>::default());
+    assert!(out.iter().all(|&c| c < 16));
+    assert_eq!(
+        out.iter().collect::<std::collections::HashSet<_>>().len(),
+        5
+    );
+}
+
+#[test]
+#[cfg(feature = "rand")]
+fn peek_in_into_respects_subset_and_short_deck() {
+    const SUBSET: u64 = 0b0000_1010_0000_1010; // ids 1, 3, 9, 11
+    let deck = Deck::<16>::default();
+    let mut rng = test_rng();
+    let mut out = Vec::new();
+    let peeked = deck.peek_in_into(&mut rng, SUBSET, 10, &mut out);
+    assert_eq!(peeked, 4);
+    assert_eq!(out.len(), 4);
+    assert!(out.iter().all(|&c| SUBSET & (1 << c) != 0));
+    assert_eq!(deck, Deck::<16>::default());
+    assert_eq!(deck.count_in(SUBSET), 4);
+    assert_eq!(
+        out.iter().collect::<std::collections::HashSet<_>>().len(),
+        4
+    );
+}
+
+#[test]
 fn chance_is_the_fraction_of_remaining_cards_in_a_subset() {
     let deck = Deck::<8>::from_bits(0b1011_0010);
     assert_eq!(deck.chance(0b0011_0000), 0.5);
     assert_eq!(deck.chance(0b1_0000_0000), 0.0);
     assert!(Deck::<8>::empty().chance(u64::MAX).is_nan());
+}
+
+#[test]
+fn is_subset_of_is_vacuously_true_for_empty_deck() {
+    assert!(Deck::<8>::empty().is_subset_of(0));
+    assert!(Deck::<8>::empty().is_subset_of(u64::MAX));
+}
+
+#[test]
+fn is_subset_of_respects_mask_membership() {
+    let deck = Deck::<8>::from_bits(0b1010_1010);
+    assert!(deck.is_subset_of(0b1010_1010));
+    assert!(deck.is_subset_of(0b1111_1111));
+    assert!(!deck.is_subset_of(0b1010_1000)); // bit 1 missing
+    assert!(!deck.is_subset_of(0b0010_1010)); // bit 7 missing
+    // High bits in the argument are ignored.
+    assert!(deck.is_subset_of(0b1010_1010 | (u64::MAX << 8)));
 }
 
 #[test]
@@ -333,6 +407,25 @@ fn toggle_flips_card_presence() {
     assert!(!deck.contains(3));
     assert!(deck.toggle(3));
     assert_eq!(deck.remaining(), 1);
+}
+
+#[test]
+fn toggle_all_xor_with_full_mask() {
+    let mut deck = Deck::<8>::from_bits(0b1111_0000);
+    deck.toggle_all(0b0000_1111);
+    assert_eq!(deck.as_bits(), 0b1111_1111);
+
+    deck.toggle_all(0b1111_1111);
+    assert_eq!(deck.as_bits(), 0b0000_0000);
+}
+
+#[test]
+fn toggle_all_masks_out_high_bits() {
+    let mut deck = Deck::<8>::default();
+    deck.toggle_all(u64::MAX);
+    assert_eq!(deck.as_bits(), 0);
+    // High bits were masked off, not toggled into the mask.
+    assert_eq!(deck, Deck::<8>::empty());
 }
 
 #[test]
@@ -483,6 +576,21 @@ fn color_from_id_panics_on_joker() {
     let _ = crate::cards::Color::from_id(52);
 }
 
+meanings! {
+    /// Too many cards for a u64 bitmask.
+    enum Oversized {
+        Only,
+    }
+    from_id = |id: u8| { let _ = id; 0 };
+    cards = 65;
+}
+
+#[test]
+#[should_panic(expected = "deck size must fit in a u64 bitmask")]
+fn meanings_panics_when_cards_exceeds_64() {
+    let _ = Oversized::Only.mask();
+}
+
 #[test]
 fn meanings_plug_into_deck_queries() {
     let deck = Deck::<16>::default();
@@ -527,7 +635,14 @@ fn readme_bitmask_table_covers_all_deck_methods() {
 
     let missing: Vec<_> = expected
         .iter()
-        .filter(|name| !table.contains(name.as_str()))
+        .filter(|name| {
+            let link = match name.as_str() {
+                "full_mask" => "[`full_mask`]",
+                "default" => "[`Default::default`]",
+                other => &format!("[`Deck::{other}`]"),
+            };
+            !table.contains(link)
+        })
         .collect();
 
     assert!(
