@@ -1,8 +1,8 @@
 #[cfg(feature = "rand")]
-use {
-    alloc::vec::Vec,
-    rand::{Rng, RngExt},
-};
+use rand::{Rng, RngExt};
+
+#[cfg(all(feature = "rand", feature = "alloc"))]
+use alloc::vec::Vec;
 
 /// Bitmask with the lowest `N` bits set; every card of a [`Deck<N>`].
 ///
@@ -264,6 +264,60 @@ impl<const N: u8> Deck<N> {
         Some(card_id(select_nth_set(subset, k)))
     }
 
+    /// Peeks up to `count` random cards from the deck and returns them as a
+    /// bitmask without removing them.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bitdeck::Deck;
+    /// use rand::{SeedableRng, rngs::SmallRng};
+    ///
+    /// let deck = Deck::<16>::default();
+    /// let mut rng = SmallRng::seed_from_u64(420);
+    ///
+    /// let seen = deck.peek_mask(&mut rng, 5);
+    /// assert_eq!(seen.count_ones(), 5);
+    /// assert_eq!(deck.remaining(), 16);
+    /// ```
+    #[cfg(feature = "rand")]
+    pub fn peek_mask(&self, rng: &mut impl Rng, count: usize) -> u64 {
+        self.peek_in_mask(rng, full_mask::<N>(), count)
+    }
+
+    /// Peeks up to `count` random cards from a subset of the deck and returns
+    /// them as a bitmask without removing them.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bitdeck::{Deck, stride_mask};
+    /// use rand::{SeedableRng, rngs::SmallRng};
+    ///
+    /// const LOW: u64 = stride_mask(0, 1, 4); // ids 0, 1, 2, 3
+    ///
+    /// let deck = Deck::<16>::default();
+    /// let mut rng = SmallRng::seed_from_u64(420);
+    ///
+    /// let seen = deck.peek_in_mask(&mut rng, LOW, 10);
+    /// assert_eq!(seen.count_ones(), 4);
+    /// assert!(seen & !LOW == 0);
+    /// assert_eq!(deck.count_in(LOW), 4);
+    /// ```
+    #[cfg(feature = "rand")]
+    pub fn peek_in_mask(&self, rng: &mut impl Rng, mask: u64, count: usize) -> u64 {
+        let mut peeked = 0u64;
+        let mut subset = self.mask & mask;
+        let n = count.min(subset.count_ones() as usize);
+        for _ in 0..n {
+            let k = rng.random_range(0..subset.count_ones());
+            let bit = select_nth_set(subset, k);
+            peeked |= bit;
+            subset &= !bit;
+        }
+        peeked
+    }
+
     /// Draws one random card from the deck, removing it.
     ///
     /// Returns `None` if the deck is empty.
@@ -321,6 +375,69 @@ impl<const N: u8> Deck<N> {
         Some(card_id(bit))
     }
 
+    /// Draws up to `count` random cards from the deck and returns them as a
+    /// bitmask.
+    ///
+    /// The returned bitmask has one bit set for every card that was removed.
+    /// Use [`count_ones`](u64::count_ones) or iterate with
+    /// [`Deck::from_bits`](Self::from_bits) to inspect the result.
+    ///
+    /// If fewer than `count` cards remain, all remaining cards are drawn.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bitdeck::Deck;
+    /// use rand::{SeedableRng, rngs::SmallRng};
+    ///
+    /// let mut deck = Deck::<16>::default();
+    /// let mut rng = SmallRng::seed_from_u64(420);
+    ///
+    /// let hand = deck.draw_mask(&mut rng, 5);
+    /// assert_eq!(hand.count_ones(), 5);
+    /// assert_eq!(deck.remaining(), 11);
+    /// ```
+    #[cfg(feature = "rand")]
+    pub fn draw_mask(&mut self, rng: &mut impl Rng, count: usize) -> u64 {
+        self.draw_in_mask(rng, full_mask::<N>(), count)
+    }
+
+    /// Draws up to `count` random cards from a subset of the deck and returns
+    /// them as a bitmask.
+    ///
+    /// If fewer than `count` selected cards remain, all of them are drawn.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bitdeck::{Deck, stride_mask};
+    /// use rand::{SeedableRng, rngs::SmallRng};
+    ///
+    /// const LOW: u64 = stride_mask(0, 1, 4); // ids 0, 1, 2, 3
+    ///
+    /// let mut deck = Deck::<16>::default();
+    /// let mut rng = SmallRng::seed_from_u64(420);
+    ///
+    /// let hand = deck.draw_in_mask(&mut rng, LOW, 10);
+    /// assert_eq!(hand.count_ones(), 4);
+    /// assert!(hand & !LOW == 0);
+    /// assert_eq!(deck.count_in(LOW), 0);
+    /// ```
+    #[cfg(feature = "rand")]
+    pub fn draw_in_mask(&mut self, rng: &mut impl Rng, mask: u64, count: usize) -> u64 {
+        let mut drawn = 0u64;
+        let mut subset = self.mask & mask;
+        let n = count.min(subset.count_ones() as usize);
+        for _ in 0..n {
+            let k = rng.random_range(0..subset.count_ones());
+            let bit = select_nth_set(subset, k);
+            drawn |= bit;
+            subset &= !bit;
+        }
+        self.mask &= !drawn;
+        drawn
+    }
+
     /// Draws up to `count` cards into `out`.
     ///
     /// The buffer is cleared first. If the deck runs out before `count` cards
@@ -344,9 +461,12 @@ impl<const N: u8> Deck<N> {
     ///     // Reshuffle, error, or play the partial hand.
     /// }
     /// ```
-    #[cfg(feature = "rand")]
+    #[cfg(all(feature = "rand", feature = "alloc"))]
     pub fn draw_into(&mut self, rng: &mut impl Rng, count: usize, out: &mut Vec<u8>) -> usize {
-        self.draw_in_into(rng, full_mask::<N>(), count, out)
+        let mask = self.draw_mask(rng, count);
+        out.clear();
+        out.extend(Iter { mask });
+        mask.count_ones() as usize
     }
 
     /// Draws up to `count` cards from a subset of the deck into `out`.
@@ -373,7 +493,7 @@ impl<const N: u8> Deck<N> {
     ///     assert_eq!(card / 13, 2); // every drawn card is a heart
     /// }
     /// ```
-    #[cfg(feature = "rand")]
+    #[cfg(all(feature = "rand", feature = "alloc"))]
     pub fn draw_in_into(
         &mut self,
         rng: &mut impl Rng,
@@ -381,24 +501,22 @@ impl<const N: u8> Deck<N> {
         count: usize,
         out: &mut Vec<u8>,
     ) -> usize {
+        let drawn = self.draw_in_mask(rng, mask, count);
         out.clear();
-        out.reserve(count.min(self.count_in(mask) as usize));
-        for _ in 0..count {
-            match self.draw_in(rng, mask) {
-                Some(c) => out.push(c),
-                None => break,
-            }
-        }
-        out.len()
+        out.extend(Iter { mask: drawn });
+        drawn.count_ones() as usize
     }
 
     /// Peeks up to `count` random cards into `out` without removing them.
     ///
     /// The buffer is cleared first. If fewer than `count` cards remain, all of
     /// them are peeked. The deck is unchanged.
-    #[cfg(feature = "rand")]
+    #[cfg(all(feature = "rand", feature = "alloc"))]
     pub fn peek_into(&self, rng: &mut impl Rng, count: usize, out: &mut Vec<u8>) -> usize {
-        self.peek_in_into(rng, full_mask::<N>(), count, out)
+        let mask = self.peek_mask(rng, count);
+        out.clear();
+        out.extend(Iter { mask });
+        mask.count_ones() as usize
     }
 
     /// Peeks up to `count` random cards from a subset of the deck into `out`,
@@ -406,7 +524,7 @@ impl<const N: u8> Deck<N> {
     ///
     /// The buffer is cleared first. If the subset contains fewer than `count`
     /// cards, all of them are peeked. The deck is unchanged.
-    #[cfg(feature = "rand")]
+    #[cfg(all(feature = "rand", feature = "alloc"))]
     pub fn peek_in_into(
         &self,
         rng: &mut impl Rng,
@@ -414,17 +532,10 @@ impl<const N: u8> Deck<N> {
         count: usize,
         out: &mut Vec<u8>,
     ) -> usize {
+        let peeked = self.peek_in_mask(rng, mask, count);
         out.clear();
-        let mut subset = self.mask & mask;
-        let n = count.min(subset.count_ones() as usize);
-        out.reserve(n);
-        for _ in 0..n {
-            let k = rng.random_range(0..subset.count_ones());
-            let bit = select_nth_set(subset, k);
-            out.push(card_id(bit));
-            subset &= !bit;
-        }
-        out.len()
+        out.extend(Iter { mask: peeked });
+        peeked.count_ones() as usize
     }
 
     /// Returns `true` if the given card is still in the deck.

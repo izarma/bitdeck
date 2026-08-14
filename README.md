@@ -6,8 +6,8 @@ While it includes a standard 54-card deck preset (`StdDeck`) behind the `cards` 
 
 ## Features
 
-- `rand` (default): enables the random draw/peek APIs
-- `alloc` (default): enables APIs that use `alloc::vec::Vec` (currently the `*_into` draw/peek helpers). Required by `rand`.
+- `rand` (default): enables the random draw/peek APIs, including the `*_mask` bulk helpers.
+- `alloc` (default): enables the `*_into` draw/peek helpers that fill an `alloc::vec::Vec`. Not required by `rand`.
 - `serde`: transparent `u64` bitmask serialization for `Deck<N>`.
 - `bevy`: derives [`bevy_ecs::prelude::Resource`](https://docs.rs/bevy/latest/bevy/prelude/trait.Resource.html) for [`Deck<N>`].
 - `cards`: exposes the `cards` module with `StdDeck` alongside its meaning subsets - standard-card suits, ranks, colors, and predefined masks.
@@ -96,12 +96,16 @@ Bits at or above `N` in any subset mask are ignored. The exception is [`Deck::fr
 | [`Deck::last_in`] | `select_nth_set(mask & m, count - 1)` | Highest-id remaining card in subset. | | Returns `None` if no selected card remains. |
 | [`Deck::draw`] | clears one random set bit | Randomly draw and remove one card. | `rand` | Returns `None` if empty. |
 | [`Deck::draw_in`] | clears one random bit from `mask & m` | Randomly draw from a subset. | `rand` | Returns `None` if no selected card remains. |
-| [`Deck::draw_into`] | repeated [`Deck::draw`] | Draw up to `count` cards into a buffer. | `rand` | Clears `out` first; stops early if deck runs out. |
-| [`Deck::draw_in_into`] | repeated [`Deck::draw_in`] | Draw up to `count` cards from a subset into a buffer. | `rand` | Clears `out` first; stops early if subset runs out. |
+| [`Deck::draw_mask`] | clears up to `count` random set bits | Randomly draw up to `count` cards. | `rand` | Returns drawn cards as a `u64` bitmask. |
+| [`Deck::draw_in_mask`] | clears up to `count` random bits from `mask & m` | Randomly draw up to `count` cards from a subset. | `rand` | Returns drawn cards as a `u64` bitmask. |
+| [`Deck::draw_into`] | repeated [`Deck::draw`] | Draw up to `count` cards into a buffer. | `rand`, `alloc` | Clears `out` first; stops early if deck runs out. |
+| [`Deck::draw_in_into`] | repeated [`Deck::draw_in`] | Draw up to `count` cards from a subset into a buffer. | `rand`, `alloc` | Clears `out` first; stops early if subset runs out. |
 | [`Deck::peek`] | reads `mask` | Random remaining card without removing it. | `rand` | Returns `None` if empty. |
 | [`Deck::peek_in`] | reads `mask & m` | Random remaining card from subset, no removal. | `rand` | Returns `None` if no selected card remains. |
-| [`Deck::peek_into`] | repeated [`Deck::peek`] | Peek up to `count` cards into a buffer. | `rand` | Clears `out` first; deck unchanged. |
-| [`Deck::peek_in_into`] | repeated [`Deck::peek_in`] | Peek up to `count` cards from a subset into a buffer. | `rand` | Clears `out` first; deck unchanged. |
+| [`Deck::peek_mask`] | reads up to `count` random set bits | Peek up to `count` cards. | `rand` | Returns peeked cards as a `u64` bitmask; deck unchanged. |
+| [`Deck::peek_in_mask`] | reads up to `count` random bits from `mask & m` | Peek up to `count` cards from a subset. | `rand` | Returns peeked cards as a `u64` bitmask; deck unchanged. |
+| [`Deck::peek_into`] | repeated [`Deck::peek`] | Peek up to `count` cards into a buffer. | `rand`, `alloc` | Clears `out` first; deck unchanged. |
+| [`Deck::peek_in_into`] | repeated [`Deck::peek_in`] | Peek up to `count` cards from a subset into a buffer. | `rand`, `alloc` | Clears `out` first; deck unchanged. |
 
 #### Queries
 

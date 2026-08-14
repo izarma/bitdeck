@@ -186,7 +186,7 @@ fn draws_are_deterministic_with_seed() {
 }
 
 #[test]
-#[cfg(feature = "rand")]
+#[cfg(all(feature = "rand", feature = "alloc"))]
 fn restock_restores_a_full_deck() {
     let mut deck = Deck::<16>::default();
     let _ = deck.draw_into(&mut test_rng(), 10, &mut Vec::new());
@@ -196,7 +196,7 @@ fn restock_restores_a_full_deck() {
 }
 
 #[test]
-#[cfg(feature = "rand")]
+#[cfg(all(feature = "rand", feature = "alloc"))]
 fn draw_into_clears_buffer_and_draws_requested_count() {
     let mut deck = Deck::<16>::default();
     let mut out = vec![255, 254];
@@ -207,7 +207,7 @@ fn draw_into_clears_buffer_and_draws_requested_count() {
 }
 
 #[test]
-#[cfg(feature = "rand")]
+#[cfg(all(feature = "rand", feature = "alloc"))]
 fn draw_into_stops_when_deck_is_empty() {
     let mut deck = Deck::<16>::default();
     let mut out = Vec::new();
@@ -218,7 +218,7 @@ fn draw_into_stops_when_deck_is_empty() {
 }
 
 #[test]
-#[cfg(feature = "rand")]
+#[cfg(all(feature = "rand", feature = "alloc"))]
 fn draw_in_into_draws_only_from_subset_and_stops_early() {
     const SUBSET: u64 = 0b0000_1010_0000_1010; // ids 1, 3, 9, 11
 
@@ -307,7 +307,7 @@ fn random_selection_does_not_mutate_the_deck() {
 }
 
 #[test]
-#[cfg(feature = "rand")]
+#[cfg(all(feature = "rand", feature = "alloc"))]
 fn peek_into_leaves_deck_unchanged_and_fills_buffer() {
     let deck = Deck::<16>::default();
     let mut rng = test_rng();
@@ -324,7 +324,7 @@ fn peek_into_leaves_deck_unchanged_and_fills_buffer() {
 }
 
 #[test]
-#[cfg(feature = "rand")]
+#[cfg(all(feature = "rand", feature = "alloc"))]
 fn peek_in_into_respects_subset_and_short_deck() {
     const SUBSET: u64 = 0b0000_1010_0000_1010; // ids 1, 3, 9, 11
     let deck = Deck::<16>::default();
@@ -340,6 +340,63 @@ fn peek_in_into_respects_subset_and_short_deck() {
         out.iter().collect::<std::collections::HashSet<_>>().len(),
         4
     );
+}
+
+#[test]
+#[cfg(feature = "rand")]
+fn draw_mask_draws_up_to_count_and_removes_them() {
+    let mut deck = Deck::<16>::default();
+    let mut rng = test_rng();
+    let hand = deck.draw_mask(&mut rng, 5);
+    assert_eq!(hand.count_ones(), 5);
+    assert_eq!(deck.remaining(), 11);
+    assert!(deck.as_bits() & hand == 0);
+}
+
+#[test]
+#[cfg(feature = "rand")]
+fn draw_mask_stops_when_deck_is_empty() {
+    let mut deck = Deck::<16>::default();
+    let mut rng = test_rng();
+    let hand = deck.draw_mask(&mut rng, 100);
+    assert_eq!(hand.count_ones(), 16);
+    assert!(deck.is_empty());
+}
+
+#[test]
+#[cfg(feature = "rand")]
+fn draw_in_mask_respects_subset_and_stops_early() {
+    const SUBSET: u64 = 0b0000_1010_0000_1010; // ids 1, 3, 9, 11
+    let mut deck = Deck::<16>::default();
+    let mut rng = test_rng();
+    let hand = deck.draw_in_mask(&mut rng, SUBSET, 10);
+    assert_eq!(hand.count_ones(), 4);
+    assert!(hand & !SUBSET == 0);
+    assert_eq!(deck.remaining(), 12);
+    assert!(!deck.contains_any(SUBSET));
+}
+
+#[test]
+#[cfg(feature = "rand")]
+fn peek_mask_leaves_deck_unchanged() {
+    let deck = Deck::<16>::default();
+    let before = deck;
+    let mut rng = test_rng();
+    let seen = deck.peek_mask(&mut rng, 5);
+    assert_eq!(seen.count_ones(), 5);
+    assert_eq!(deck, before);
+}
+
+#[test]
+#[cfg(feature = "rand")]
+fn peek_in_mask_respects_subset_and_short_deck() {
+    const SUBSET: u64 = 0b0000_1010_0000_1010; // ids 1, 3, 9, 11
+    let deck = Deck::<16>::default();
+    let mut rng = test_rng();
+    let seen = deck.peek_in_mask(&mut rng, SUBSET, 10);
+    assert_eq!(seen.count_ones(), 4);
+    assert!(seen & !SUBSET == 0);
+    assert_eq!(deck.count_in(SUBSET), 4);
 }
 
 #[test]
