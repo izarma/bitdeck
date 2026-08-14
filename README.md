@@ -39,43 +39,43 @@ also panics in debug builds if out-of-range bits are set.
 
 #### Constructors & conversion
 
-| Operation | Mask effect | Description | Feature | Notes |
-|-----------|-------------|-------------|---------|-------|
-| [`full_mask`] | returns `(1u64 << N) - 1` | Bitmask with the lowest `N` bits set. | | Panics if `N > 64`. |
-| [`Default::default`] | `mask = full_mask::<N>()` | Constructor: a full deck. | | Compile-time error if `N > 64`. |
-| [`Deck::empty`] | `mask = 0` | Constructor: an empty deck. | | Compile-time error if `N > 64`. |
-| [`Deck::from_bits`] | `mask = m & full_mask::<N>()` | Wrap a raw bitmask; high bits are masked off. | | Round-trips with `as_bits`; panics in debug if high bits are set. |
-| [`Deck::as_bits`] | returns `mask` | Get the raw remaining bitmask. | | Round-trips with `from_bits`. |
+| Operation | Mask effect | Description | Notes |
+|-----------|-------------|-------------|-------|
+| [`full_mask`] | returns `(1u64 << N) - 1` | Bitmask with the lowest `N` bits set. | Panics if `N > 64`. |
+| [`Default::default`] | `mask = full_mask::<N>()` | Constructor: a full deck. | Compile-time error if `N > 64`. |
+| [`Deck::empty`] | `mask = 0` | Constructor: an empty deck. | Compile-time error if `N > 64`. |
+| [`Deck::from_bits`] | `mask = m & full_mask::<N>()` | Wrap a raw bitmask; high bits are masked off. | Round-trips with `as_bits`; panics in debug if high bits are set. |
+| [`Deck::as_bits`] | returns `mask` | Get the raw remaining bitmask. | Round-trips with `from_bits`. |
 
 #### Mutations
 
-| Operation | Mask effect | Description | Feature | Notes |
-|-----------|-------------|-------------|---------|-------|
-| [`Deck::restock`] | `mask = full_mask::<N>()` | Restore the deck to full. | | |
-| [`Deck::insert_all`] | `mask = mask \| (m & full_mask::<N>())` | Add every selected card back. | | |
-| [`Deck::remove_all`] | `mask &= !m` | Remove every selected remaining card; return count removed. | | |
-| [`Deck::retain`] | `mask &= m` | Keep only the selected remaining cards. | | |
-| [`Deck::insert`] | `mask = mask \| (1 << c)` | Put one card back. | | Panics if `card >= N`. |
-| [`Deck::remove`] | `mask &= !(1 << c)` | Remove one card; return whether it was present. | | Panics if `card >= N`. |
-| [`Deck::toggle`] | `mask ^= (1 << c)` | Flip one card’s presence; return new state. | | Panics if `card >= N`. |
+| Operation | Mask effect | Description | Notes |
+|-----------|-------------|-------------|-------|
+| [`Deck::restock`] | `mask = full_mask::<N>()` | Restore the deck to full. | |
+| [`Deck::insert_all`] | `mask = mask \| (m & full_mask::<N>())` | Add every selected card back. | |
+| [`Deck::remove_all`] | `mask &= !m` | Remove every selected remaining card; return count removed. | |
+| [`Deck::retain`] | `mask &= m` | Keep only the selected remaining cards. | |
+| [`Deck::insert`] | `mask = mask \| (1 << c)` | Put one card back. | Panics if `card >= N`. |
+| [`Deck::remove`] | `mask &= !(1 << c)` | Remove one card; return whether it was present. | Panics if `card >= N`. |
+| [`Deck::toggle`] | `mask ^= (1 << c)` | Flip one card’s presence; return new state. | Panics if `card >= N`. |
 
 #### Cardinality & drawn state
 
-| Operation | Mask effect | Description | Feature | Notes |
-|-----------|-------------|-------------|---------|-------|
-| [`Deck::remaining`] | `mask.count_ones()` | Count cards remaining. | | |
-| [`Deck::is_empty`] | `mask == 0` | `true` if no cards remain. | | |
-| [`Deck::is_full`] | `mask == full_mask::<N>()` | `true` if every card remains. | | |
-| [`Deck::drawn_mask`] | `!mask & full_mask::<N>()` | Bitmask of cards that have been drawn. | | |
-| [`Deck::drawn_count`] | `N - mask.count_ones()` | Count cards that have been drawn. | | |
+| Operation | Mask effect | Description | Notes |
+|-----------|-------------|-------------|-------|
+| [`Deck::remaining`] | `mask.count_ones()` | Count cards remaining. | |
+| [`Deck::is_empty`] | `mask == 0` | `true` if no cards remain. | |
+| [`Deck::is_full`] | `mask == full_mask::<N>()` | `true` if every card remains. | |
+| [`Deck::drawn_mask`] | `!mask & full_mask::<N>()` | Bitmask of cards that have been drawn. | |
+| [`Deck::drawn_count`] | `N - mask.count_ones()` | Count cards that have been drawn. | |
 
 #### Iteration
 
-| Operation | Mask effect | Description | Feature | Notes |
-|-----------|-------------|-------------|---------|-------|
-| [`Deck::iter_drawn`] | iterates `!mask & full_mask::<N>()` | Iterate drawn card ids in ascending order. | | |
-| [`Deck::iter_in`] | iterates `mask & m` | Iterate remaining ids inside a subset. | | |
-| [`Deck::iter`] | iterates `mask` | Iterate all remaining ids in ascending order. | | |
+| Operation | Mask effect | Description | Notes |
+|-----------|-------------|-------------|-------|
+| [`Deck::iter_drawn`] | iterates `!mask & full_mask::<N>()` | Iterate drawn card ids in ascending order. | |
+| [`Deck::iter_in`] | iterates `mask & m` | Iterate remaining ids inside a subset. | |
+| [`Deck::iter`] | iterates `mask` | Iterate all remaining ids in ascending order. | |
 
 #### Selection
 
@@ -93,12 +93,12 @@ also panics in debug builds if out-of-range bits are set.
 
 #### Queries
 
-| Operation | Mask effect | Description | Feature | Notes |
-|-----------|-------------|-------------|---------|-------|
-| [`Deck::contains`] | `(mask >> c) & 1 == 1` | `true` if card `c` is still present. | | Panics if `card >= N`. |
-| [`Deck::contains_any`] | `mask & m != 0` | `true` if any selected card remains. | | |
-| [`Deck::contains_all`] | `mask & m == m & full_mask::<N>()` | `true` if every selected card remains. | | |
-| [`Deck::count_in`] | `(mask & m).count_ones()` | Count remaining cards in a subset. | | |
-| [`Deck::chance`] | `count_in(m) / mask.count_ones()` | Probability a random remaining card is in subset. | | Returns `NaN` when empty. |
+| Operation | Mask effect | Description | Notes |
+|-----------|-------------|-------------|-------|
+| [`Deck::contains`] | `(mask >> c) & 1 == 1` | `true` if card `c` is still present. | Panics if `card >= N`. |
+| [`Deck::contains_any`] | `mask & m != 0` | `true` if any selected card remains. | |
+| [`Deck::contains_all`] | `mask & m == m & full_mask::<N>()` | `true` if every selected card remains. | |
+| [`Deck::count_in`] | `(mask & m).count_ones()` | Count remaining cards in a subset. | |
+| [`Deck::chance`] | `count_in(m) / mask.count_ones()` | Probability a random remaining card is in subset. | Returns `NaN` when empty. |
 
 <!-- bitdeck-op-table-end -->
