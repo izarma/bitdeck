@@ -1,13 +1,13 @@
 # bitdeck
 
-bitdeck is a fixed-capacity (N ≤ 64) **Bitmask**. `Deck<N>` stores subset membership as a single `u64`, enabling deterministic subset queries, bulk mutations, and (with the `rand` feature) uniform random draws without replacement and non-destructive peeks.
+bitdeck is a fixed-capacity (N ≤ 64) **Bitmask**. [`Deck<N>`] stores subset membership as a `u64`, enabling deterministic subset queries, bulk mutations, and (with the `rand` feature) uniform random draws without replacement and non-destructive peeks.
 
-While it includes a standard 54-card deck preset (`StdDeck`) behind the `cards` feature, `Deck<N>` is completely generic and can be used for loot tables, turn based action queues, shuffle bags etc.
+While it includes a standard 54-card deck preset (`StdDeck`) behind the `cards` feature, [`Deck<N>`] is completely generic and can be used for loot tables, turn based action queues, shuffle bags etc.
 
 ## Features
 
 - `rand` (default): enables the random draw/peek APIs, including the `*_mask` bulk helpers.
-- `alloc` (default): enables the `*_into` draw/peek helpers that fill an `alloc::vec::Vec`. Not required by `rand`.
+- `alloc` (default): enables the draw/peek `*_into`  helpers that fill an `alloc::vec::Vec`. Requires `rand`.
 - `serde`: transparent `u64` bitmask serialization for `Deck<N>`.
 - `bevy`: derives [`bevy_ecs::prelude::Resource`](https://docs.rs/bevy/latest/bevy/prelude/trait.Resource.html) for [`Deck<N>`].
 - `cards`: exposes the `cards` module with `StdDeck` alongside its meaning subsets - standard-card suits, ranks, colors, and predefined masks.
@@ -23,7 +23,7 @@ The crate is `no_std`. The default feature set includes `alloc`; disable default
 
 ## Bitmask operations
 
-`Deck<N>` is just a `u64` bitmask. Every operation below is a thin wrapper
+[`Deck<N>`] is just a `u64` bitmask. Every operation below is a thin wrapper
 around a bitwise read or mutation on that mask.
 - Bitwise subset queries and bulk mutations are O(1).
 - Random draws/peeks are uniform without replacement:

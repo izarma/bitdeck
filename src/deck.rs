@@ -768,19 +768,31 @@ fn bmi2_available() -> bool {
 
 #[cfg(target_arch = "x86_64")]
 fn detect_bmi2() -> bool {
+    // CPUID uses EAX as an input (leaf) and ECX as a secondary input (subleaf).
+    // These values are identifier numbers that are used by CPUID instruction to retrieve information about the CPU.
+    // The CPU returns answers in EAX, EBX, ECX, and EDX.
+    // ref : www.felixcloutier.com/x86/cpuid
+    //
+    // Set EAX=0 and call CPUID
+    // Returns
+    // EBX, EDX, ECX (ordered): CPU's manufacturer ID string (12-character ASCII)
+    // EAX: Highest Function Parameter (Maximum leaf value) supported by the CPU
     let leaf0 = core::arch::x86_64::__cpuid(0);
+    // BMI2 lives in leaf 7 with bit 8 set in EBX
     if leaf0.eax < 7 {
         return false;
     }
 
-    let leaf7 = core::arch::x86_64::__cpuid_count(7, 0);
+    // Set EAX=7, ECX=0 and call CPUID
+    // returns
+    // EBX, ECX, and EDX: extended feature flags
+    // EAX: the maximum ECX value (subleaf) for EAX=7
+    let leaf7 = core::arch::x86_64::__cpuid(7);
+    // 8th EBX bit indicates BMI2 support
     if leaf7.ebx & (1 << 8) == 0 {
         return false;
     }
 
-    // SKL052: some Skylake steppings set the BMI1/BMI2 CPUID bits without
-    // real support; using the instructions then raises #UD. Every genuine
-    // BMI2-capable Intel chip also reports AVX, so gate on that.
     let vendor: [u8; 12] = {
         let mut v = [0u8; 12];
         v[0..4].copy_from_slice(&leaf0.ebx.to_ne_bytes());
@@ -788,6 +800,16 @@ fn detect_bmi2() -> bool {
         v[8..12].copy_from_slice(&leaf0.ecx.to_ne_bytes());
         v
     };
+
+    // SKL052: some Skylake steppings set the BMI1/BMI2 CPUID bits without
+    // real support; using the instructions then raises #UD. Every genuine
+    // BMI2-capable Intel chip also reports AVX, so gate on that.
+
+    // Set EAX=1 and call CPUID
+    // Returns
+    // EAX: CPU Signature (stepping, model, microarchitecture codename, family information)
+    // EDX and ECX: Feature flags
+    // ECX: additional feature flags
     if &vendor == b"GenuineIntel" {
         let leaf1 = core::arch::x86_64::__cpuid(1);
         return (leaf1.ecx >> 28) & 1 != 0; // AVX bit
@@ -805,8 +827,8 @@ pub(crate) fn select_nth_set(mask: u64, k: u32) -> u64 {
     );
     #[cfg(target_arch = "x86_64")]
     {
+        // SAFETY: confirm BMI2 availability - we first check the compiletime feature flag, else the runtime check
         if bmi2_available() {
-            // SAFETY: BMI2 confirmed at runtime.
             return unsafe { core::arch::x86_64::_pdep_u64(1u64 << k, mask) };
         }
     }
