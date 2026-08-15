@@ -4,7 +4,7 @@
 //! ids `52` and `53` are jokers. Jokers are unmapped in every meaning here, so
 //! [`crate::cards::Suit::from_id`], [`crate::cards::Rank::from_id`], and
 //! [`crate::cards::Color::from_id`] panic for them. Handle them separately,
-//! for example with [`crate::cards::JOKERS`].
+//! for example with [`crate::cards::JOKERS`] or [`crate::cards::Card`].
 
 use crate::{Deck, meaning::stride_mask, meanings};
 
@@ -14,6 +14,8 @@ pub const CARD_COUNT: u8 = 54;
 pub type StdDeck = Deck<CARD_COUNT>;
 /// Bitmask with all [`CARD_COUNT`] bits set; the initial state of a full [`StdDeck`].
 pub const FULL_DECK: u64 = crate::full_mask::<CARD_COUNT>();
+/// First card id used by a joker.
+pub const JOKER_START: u8 = 52;
 
 meanings! {
     /// The four standard suits (`id / 13`).
@@ -29,6 +31,20 @@ meanings! {
     }
     from_id = |id: u8| id / 13;
     cards = 52;
+}
+
+impl Suit {
+    /// Unicode symbol for the suit.
+    #[inline]
+    #[must_use]
+    pub const fn symbol(self) -> &'static str {
+        match self {
+            Suit::Clubs => "♣",
+            Suit::Diamonds => "♦",
+            Suit::Hearts => "♥",
+            Suit::Spades => "♠",
+        }
+    }
 }
 
 meanings! {
@@ -77,8 +93,8 @@ meanings! {
     cards = 52;
 }
 
-/// The two jokers (ids 52 and 53).
-pub const JOKERS: u64 = stride_mask(52, 1, 2);
+/// The two jokers (ids [`JOKER_START`] and [`JOKER_START`] + 1).
+pub const JOKERS: u64 = stride_mask(JOKER_START, 1, 2);
 /// Every non-joker card (ids `0..=51`).
 pub const STANDARD: u64 = Suit::ALL;
 /// Every red card: diamonds and hearts.
@@ -89,3 +105,51 @@ pub const BLACK: u64 = Color::Black.mask();
 pub const ACES: u64 = Rank::Ace.mask();
 /// Jacks, queens, and kings across all suits.
 pub const FACE_CARDS: u64 = Rank::Jack.mask() | Rank::Queen.mask() | Rank::King.mask();
+
+/// A standard playing card or joker.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Card {
+    /// A standard card with a suit and rank.
+    Standard(Suit, Rank),
+    /// One of the two jokers (`0` or `1`).
+    Joker(u8),
+}
+
+impl Card {
+    /// Builds a [`Card`] from a [`StdDeck`] card id.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `id >= CARD_COUNT`.
+    #[inline]
+    #[must_use]
+    pub const fn from_id(id: u8) -> Self {
+        assert!(id < CARD_COUNT, "card id out of range");
+        if id >= JOKER_START {
+            Card::Joker(id - JOKER_START)
+        } else {
+            Card::Standard(Suit::from_id(id), Rank::from_id(id))
+        }
+    }
+}
+
+impl core::fmt::Display for Card {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Card::Standard(suit, rank) => write!(f, "{:#?}{}", rank, suit.symbol()),
+            Card::Joker(n) => write!(f, "Joker {n}"),
+        }
+    }
+}
+
+/// Returns a human-readable name for a [`StdDeck`] card id.
+///
+/// # Panics
+///
+/// Panics if `id >= CARD_COUNT`.
+#[cfg(feature = "alloc")]
+#[inline]
+#[must_use]
+pub fn card_name(id: u8) -> alloc::string::String {
+    alloc::format!("{}", Card::from_id(id))
+}

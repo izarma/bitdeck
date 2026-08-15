@@ -4,6 +4,9 @@ use rand::{Rng, RngExt};
 #[cfg(all(feature = "rand", feature = "alloc"))]
 use alloc::vec::Vec;
 
+#[cfg(feature = "bevy")]
+use bevy_ecs::prelude::ReflectComponent;
+
 /// Bitmask with the lowest `N` bits set; every card of a [`Deck<N>`].
 ///
 /// # Panics
@@ -26,7 +29,11 @@ pub const fn full_mask<const N: u8>() -> u64 {
 /// [`crate::stride_mask`] or [`crate::meanings!`]. Bits at or above `N` are
 /// ignored by subset queries, mutations, and draws.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "bevy", derive(bevy_ecs::prelude::Resource))]
+#[cfg_attr(
+    feature = "bevy",
+    derive(bevy_ecs::prelude::Component, bevy_reflect::Reflect)
+)]
+#[cfg_attr(feature = "bevy", reflect(Component))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(transparent))]
 pub struct Deck<const N: u8> {

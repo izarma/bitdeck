@@ -9,7 +9,7 @@ While it includes a standard 54-card deck preset (`StdDeck`) behind the `cards` 
 - `rand` (default): enables the random draw/peek APIs, including the `*_mask` bulk helpers.
 - `alloc` (default): enables the draw/peek `*_into`  helpers that fill an `alloc::vec::Vec`. Requires `rand`.
 - `serde`: transparent `u64` bitmask serialization for `Deck<N>`.
-- `bevy`: derives [`bevy_ecs::prelude::Resource`](https://docs.rs/bevy/latest/bevy/prelude/trait.Resource.html) for [`Deck<N>`].
+- `bevy`: derives [`Component`](https://docs.rs/bevy_ecs/latest/bevy_ecs/component/index.html) and [`Reflect`](https://docs.rs/bevy_reflect/latest/bevy_reflect/trait.Reflect.html) for [`Deck<N>`], so it can be attached to entities, or wrapped in a [`bevy_ecs::prelude::Resource`](https://docs.rs/bevy/latest/bevy/prelude/trait.Resource.html).
 - `cards`: exposes the `cards` module with `StdDeck` alongside its meaning subsets - standard-card suits, ranks, colors, and predefined masks.
 
 The crate is `no_std`. The default feature set includes `alloc`; disable default features and enable only the features you need for a `no_std` environment without an allocator.
@@ -17,7 +17,7 @@ The crate is `no_std`. The default feature set includes `alloc`; disable default
 ## Properties
 
 - **Uniform without replacement.** Every remaining item is equally likely on every draw; drawn items leave the deck. Use multiple copies of each item for weighted randomness.
-- **Subset-aware.** Draw from or query any subset, "a heart", "a red card", "a common drop", with a plain `u64` mask.
+- **Subset-aware.** Draw from or query any subset(eg: a heart, a red card, a common drop), with a plain `u64` mask.
 - **Const mask algebra.** Build masks in const contexts with [`stride_mask`] or the [`meanings!`] macro (variant indices follow declaration order); compose them with `|`, `&`, and `!`.
 - **Bring your own RNG.** All randomness comes from a caller-supplied `rand` RNG; the deck itself holds no RNG state.
 

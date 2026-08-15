@@ -160,16 +160,35 @@ fn serde_round_trips_as_transparent_u64() {
 
 #[cfg(feature = "bevy")]
 #[test]
-fn deck_is_a_usable_bevy_resource() {
+fn deck_is_a_usable_bevy_component() {
     use bevy_ecs::prelude::*;
 
-    fn assert_resource<T: Resource>() {}
-    assert_resource::<Deck<54>>();
-    assert_resource::<Deck<10>>();
+    fn assert_component<T: Component>() {}
+    assert_component::<Deck<54>>();
+    assert_component::<Deck<10>>();
 
     let mut world = World::new();
-    world.insert_resource(Deck::<54>::default());
-    assert_eq!(*world.resource::<Deck<54>>(), Deck::<54>::default());
+    let entity = world.spawn(Deck::<54>::default()).id();
+    assert_eq!(
+        *world.entity(entity).get::<Deck<54>>().unwrap(),
+        Deck::<54>::default()
+    );
+}
+
+#[cfg(feature = "bevy")]
+#[test]
+fn deck_can_be_wrapped_as_bevy_resource() {
+    use bevy_ecs::prelude::*;
+
+    #[derive(Resource)]
+    struct GlobalDeck(Deck<54>);
+
+    fn assert_resource<T: Resource>() {}
+    assert_resource::<GlobalDeck>();
+
+    let mut world = World::new();
+    world.insert_resource(GlobalDeck(Deck::<54>::default()));
+    assert_eq!(world.resource::<GlobalDeck>().0, Deck::<54>::default());
 }
 
 #[test]

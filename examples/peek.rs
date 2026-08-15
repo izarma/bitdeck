@@ -6,31 +6,9 @@
 //!
 //! Run with: cargo run --example peek --features=cards
 
-use bitdeck::{
-    StdDeck,
-    cards::{Rank, Suit},
-};
+use bitdeck::{StdDeck, cards::card_name};
 use rand::{SeedableRng, rngs::SmallRng};
 use std::collections::VecDeque;
-
-fn suit_symbol(suit: Suit) -> &'static str {
-    match suit {
-        Suit::Clubs => "♣",
-        Suit::Diamonds => "♦",
-        Suit::Hearts => "♥",
-        Suit::Spades => "♠",
-    }
-}
-
-const JOKER_START: u8 = 52;
-
-fn card_name(id: u8) -> String {
-    if id >= JOKER_START {
-        format!("Joker {}", id - JOKER_START)
-    } else {
-        format!("{:#?}{}", Rank::from_id(id), suit_symbol(Suit::from_id(id)))
-    }
-}
 
 /// A bitmask deck plus the one thing a bitmask cannot hold: order.
 ///
