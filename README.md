@@ -1,15 +1,18 @@
 # bitdeck
 
-bitdeck is a fixed-capacity (N ≤ 64) **Bitmask**. `Deck<N>` stores subset membership as a single `u64`, enabling deterministic subset queries, bulk mutations, and (with the `rand` feature) uniform random draws without replacement and non-destructive peeks.
+bitdeck is a fixed-capacity (N ≤ 64) **Bitmask**. [`Deck<N>`] stores subset membership as a `u64`, enabling deterministic subset queries, bulk mutations, and (with the `rand` feature) uniform random draws without replacement and non-destructive peeks.
 
-While it includes a standard 54-card deck preset (`StdDeck`) behind the `cards` feature, `Deck<N>` is completely generic and can be used for loot tables, turn based action queues, shuffle bags etc.
+While it includes a standard 54-card deck preset (`StdDeck`) behind the `cards` feature, [`Deck<N>`] is completely generic and can be used for loot tables, turn based action queues, shuffle bags etc.
 
 ## Features
 
-- `rand` (default): enables the random draw/peek APIs
+- `rand` (default): enables the random draw/peek APIs, including the `*_mask` bulk helpers.
+- `alloc` (default): enables the draw/peek `*_into`  helpers that fill an `alloc::vec::Vec`. Requires `rand`.
 - `serde`: transparent `u64` bitmask serialization for `Deck<N>`.
 - `bevy`: derives [`bevy_ecs::prelude::Resource`](https://docs.rs/bevy/latest/bevy/prelude/trait.Resource.html) for [`Deck<N>`].
 - `cards`: exposes the `cards` module with `StdDeck` alongside its meaning subsets - standard-card suits, ranks, colors, and predefined masks.
+
+The crate is `no_std`. The default feature set includes `alloc`; disable default features and enable only the features you need for a `no_std` environment without an allocator.
 
 ## Properties
 
@@ -20,11 +23,21 @@ While it includes a standard 54-card deck preset (`StdDeck`) behind the `cards` 
 
 ## Bitmask operations
 
-`Deck<N>` is just a `u64` bitmask. Every operation below is a thin wrapper
+[`Deck<N>`] is just a `u64` bitmask. Every operation below is a thin wrapper
 around a bitwise read or mutation on that mask.
 - Bitwise subset queries and bulk mutations are O(1).
 - Random draws/peeks are uniform without replacement:
   O(1) on x86_64 with BMI2, and O(N) with the portable fallback.
+
+Compile with `-C target-feature=+bmi2` to enable the BMI2 fast path at compile
+time (no runtime CPUID check):
+
+```bash
+RUSTFLAGS="-C target-feature=+bmi2" cargo build
+```
+
+Note that this produces a binary that requires BMI2 at runtime; the default
+portable build still auto-detects BMI2 via CPUID and uses it when available.
 
 <!-- bitdeck-op-table-start -->
 
@@ -83,12 +96,16 @@ Bits at or above `N` in any subset mask are ignored. The exception is [`Deck::fr
 | [`Deck::last_in`] | `select_nth_set(mask & m, count - 1)` | Highest-id remaining card in subset. | | Returns `None` if no selected card remains. |
 | [`Deck::draw`] | clears one random set bit | Randomly draw and remove one card. | `rand` | Returns `None` if empty. |
 | [`Deck::draw_in`] | clears one random bit from `mask & m` | Randomly draw from a subset. | `rand` | Returns `None` if no selected card remains. |
-| [`Deck::draw_into`] | repeated [`Deck::draw`] | Draw up to `count` cards into a buffer. | `rand` | Clears `out` first; stops early if deck runs out. |
-| [`Deck::draw_in_into`] | repeated [`Deck::draw_in`] | Draw up to `count` cards from a subset into a buffer. | `rand` | Clears `out` first; stops early if subset runs out. |
+| [`Deck::draw_mask`] | clears up to `count` random set bits | Randomly draw up to `count` cards. | `rand` | Returns drawn cards as a `u64` bitmask. |
+| [`Deck::draw_in_mask`] | clears up to `count` random bits from `mask & m` | Randomly draw up to `count` cards from a subset. | `rand` | Returns drawn cards as a `u64` bitmask. |
+| [`Deck::draw_into`] | repeated [`Deck::draw`] | Draw up to `count` cards into a buffer. | `rand`, `alloc` | Clears `out` first; stops early if deck runs out. |
+| [`Deck::draw_in_into`] | repeated [`Deck::draw_in`] | Draw up to `count` cards from a subset into a buffer. | `rand`, `alloc` | Clears `out` first; stops early if subset runs out. |
 | [`Deck::peek`] | reads `mask` | Random remaining card without removing it. | `rand` | Returns `None` if empty. |
 | [`Deck::peek_in`] | reads `mask & m` | Random remaining card from subset, no removal. | `rand` | Returns `None` if no selected card remains. |
-| [`Deck::peek_into`] | repeated [`Deck::peek`] | Peek up to `count` cards into a buffer. | `rand` | Clears `out` first; deck unchanged. |
-| [`Deck::peek_in_into`] | repeated [`Deck::peek_in`] | Peek up to `count` cards from a subset into a buffer. | `rand` | Clears `out` first; deck unchanged. |
+| [`Deck::peek_mask`] | reads up to `count` random set bits | Peek up to `count` cards. | `rand` | Returns peeked cards as a `u64` bitmask; deck unchanged. |
+| [`Deck::peek_in_mask`] | reads up to `count` random bits from `mask & m` | Peek up to `count` cards from a subset. | `rand` | Returns peeked cards as a `u64` bitmask; deck unchanged. |
+| [`Deck::peek_into`] | repeated [`Deck::peek`] | Peek up to `count` cards into a buffer. | `rand`, `alloc` | Clears `out` first; deck unchanged. |
+| [`Deck::peek_in_into`] | repeated [`Deck::peek_in`] | Peek up to `count` cards from a subset into a buffer. | `rand`, `alloc` | Clears `out` first; deck unchanged. |
 
 #### Queries
 

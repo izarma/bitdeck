@@ -1,6 +1,9 @@
 #[cfg(feature = "rand")]
 use rand::{Rng, RngExt};
 
+#[cfg(all(feature = "rand", feature = "alloc"))]
+use alloc::vec::Vec;
+
 /// Bitmask with the lowest `N` bits set; every card of a [`Deck<N>`].
 ///
 /// # Panics
@@ -261,6 +264,60 @@ impl<const N: u8> Deck<N> {
         Some(card_id(select_nth_set(subset, k)))
     }
 
+    /// Peeks up to `count` random cards from the deck and returns them as a
+    /// bitmask without removing them.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bitdeck::Deck;
+    /// use rand::{SeedableRng, rngs::SmallRng};
+    ///
+    /// let deck = Deck::<16>::default();
+    /// let mut rng = SmallRng::seed_from_u64(420);
+    ///
+    /// let seen = deck.peek_mask(&mut rng, 5);
+    /// assert_eq!(seen.count_ones(), 5);
+    /// assert_eq!(deck.remaining(), 16);
+    /// ```
+    #[cfg(feature = "rand")]
+    pub fn peek_mask(&self, rng: &mut impl Rng, count: usize) -> u64 {
+        self.peek_in_mask(rng, full_mask::<N>(), count)
+    }
+
+    /// Peeks up to `count` random cards from a subset of the deck and returns
+    /// them as a bitmask without removing them.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bitdeck::{Deck, stride_mask};
+    /// use rand::{SeedableRng, rngs::SmallRng};
+    ///
+    /// const LOW: u64 = stride_mask(0, 1, 4); // ids 0, 1, 2, 3
+    ///
+    /// let deck = Deck::<16>::default();
+    /// let mut rng = SmallRng::seed_from_u64(420);
+    ///
+    /// let seen = deck.peek_in_mask(&mut rng, LOW, 10);
+    /// assert_eq!(seen.count_ones(), 4);
+    /// assert!(seen & !LOW == 0);
+    /// assert_eq!(deck.count_in(LOW), 4);
+    /// ```
+    #[cfg(feature = "rand")]
+    pub fn peek_in_mask(&self, rng: &mut impl Rng, mask: u64, count: usize) -> u64 {
+        let mut peeked = 0u64;
+        let mut subset = self.mask & mask;
+        let n = count.min(subset.count_ones() as usize);
+        for _ in 0..n {
+            let k = rng.random_range(0..subset.count_ones());
+            let bit = select_nth_set(subset, k);
+            peeked |= bit;
+            subset &= !bit;
+        }
+        peeked
+    }
+
     /// Draws one random card from the deck, removing it.
     ///
     /// Returns `None` if the deck is empty.
@@ -318,6 +375,69 @@ impl<const N: u8> Deck<N> {
         Some(card_id(bit))
     }
 
+    /// Draws up to `count` random cards from the deck and returns them as a
+    /// bitmask.
+    ///
+    /// The returned bitmask has one bit set for every card that was removed.
+    /// Use [`count_ones`](u64::count_ones) or iterate with
+    /// [`Deck::from_bits`](Self::from_bits) to inspect the result.
+    ///
+    /// If fewer than `count` cards remain, all remaining cards are drawn.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bitdeck::Deck;
+    /// use rand::{SeedableRng, rngs::SmallRng};
+    ///
+    /// let mut deck = Deck::<16>::default();
+    /// let mut rng = SmallRng::seed_from_u64(420);
+    ///
+    /// let hand = deck.draw_mask(&mut rng, 5);
+    /// assert_eq!(hand.count_ones(), 5);
+    /// assert_eq!(deck.remaining(), 11);
+    /// ```
+    #[cfg(feature = "rand")]
+    pub fn draw_mask(&mut self, rng: &mut impl Rng, count: usize) -> u64 {
+        self.draw_in_mask(rng, full_mask::<N>(), count)
+    }
+
+    /// Draws up to `count` random cards from a subset of the deck and returns
+    /// them as a bitmask.
+    ///
+    /// If fewer than `count` selected cards remain, all of them are drawn.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bitdeck::{Deck, stride_mask};
+    /// use rand::{SeedableRng, rngs::SmallRng};
+    ///
+    /// const LOW: u64 = stride_mask(0, 1, 4); // ids 0, 1, 2, 3
+    ///
+    /// let mut deck = Deck::<16>::default();
+    /// let mut rng = SmallRng::seed_from_u64(420);
+    ///
+    /// let hand = deck.draw_in_mask(&mut rng, LOW, 10);
+    /// assert_eq!(hand.count_ones(), 4);
+    /// assert!(hand & !LOW == 0);
+    /// assert_eq!(deck.count_in(LOW), 0);
+    /// ```
+    #[cfg(feature = "rand")]
+    pub fn draw_in_mask(&mut self, rng: &mut impl Rng, mask: u64, count: usize) -> u64 {
+        let mut drawn = 0u64;
+        let mut subset = self.mask & mask;
+        let n = count.min(subset.count_ones() as usize);
+        for _ in 0..n {
+            let k = rng.random_range(0..subset.count_ones());
+            let bit = select_nth_set(subset, k);
+            drawn |= bit;
+            subset &= !bit;
+        }
+        self.mask &= !drawn;
+        drawn
+    }
+
     /// Draws up to `count` cards into `out`.
     ///
     /// The buffer is cleared first. If the deck runs out before `count` cards
@@ -341,9 +461,12 @@ impl<const N: u8> Deck<N> {
     ///     // Reshuffle, error, or play the partial hand.
     /// }
     /// ```
-    #[cfg(feature = "rand")]
+    #[cfg(all(feature = "rand", feature = "alloc"))]
     pub fn draw_into(&mut self, rng: &mut impl Rng, count: usize, out: &mut Vec<u8>) -> usize {
-        self.draw_in_into(rng, full_mask::<N>(), count, out)
+        let mask = self.draw_mask(rng, count);
+        out.clear();
+        out.extend(Iter { mask });
+        mask.count_ones() as usize
     }
 
     /// Draws up to `count` cards from a subset of the deck into `out`.
@@ -370,7 +493,7 @@ impl<const N: u8> Deck<N> {
     ///     assert_eq!(card / 13, 2); // every drawn card is a heart
     /// }
     /// ```
-    #[cfg(feature = "rand")]
+    #[cfg(all(feature = "rand", feature = "alloc"))]
     pub fn draw_in_into(
         &mut self,
         rng: &mut impl Rng,
@@ -378,24 +501,22 @@ impl<const N: u8> Deck<N> {
         count: usize,
         out: &mut Vec<u8>,
     ) -> usize {
+        let drawn = self.draw_in_mask(rng, mask, count);
         out.clear();
-        out.reserve(count.min(self.count_in(mask) as usize));
-        for _ in 0..count {
-            match self.draw_in(rng, mask) {
-                Some(c) => out.push(c),
-                None => break,
-            }
-        }
-        out.len()
+        out.extend(Iter { mask: drawn });
+        drawn.count_ones() as usize
     }
 
     /// Peeks up to `count` random cards into `out` without removing them.
     ///
     /// The buffer is cleared first. If fewer than `count` cards remain, all of
     /// them are peeked. The deck is unchanged.
-    #[cfg(feature = "rand")]
+    #[cfg(all(feature = "rand", feature = "alloc"))]
     pub fn peek_into(&self, rng: &mut impl Rng, count: usize, out: &mut Vec<u8>) -> usize {
-        self.peek_in_into(rng, full_mask::<N>(), count, out)
+        let mask = self.peek_mask(rng, count);
+        out.clear();
+        out.extend(Iter { mask });
+        mask.count_ones() as usize
     }
 
     /// Peeks up to `count` random cards from a subset of the deck into `out`,
@@ -403,7 +524,7 @@ impl<const N: u8> Deck<N> {
     ///
     /// The buffer is cleared first. If the subset contains fewer than `count`
     /// cards, all of them are peeked. The deck is unchanged.
-    #[cfg(feature = "rand")]
+    #[cfg(all(feature = "rand", feature = "alloc"))]
     pub fn peek_in_into(
         &self,
         rng: &mut impl Rng,
@@ -411,17 +532,10 @@ impl<const N: u8> Deck<N> {
         count: usize,
         out: &mut Vec<u8>,
     ) -> usize {
+        let peeked = self.peek_in_mask(rng, mask, count);
         out.clear();
-        let mut subset = self.mask & mask;
-        let n = count.min(subset.count_ones() as usize);
-        out.reserve(n);
-        for _ in 0..n {
-            let k = rng.random_range(0..subset.count_ones());
-            let bit = select_nth_set(subset, k);
-            out.push(card_id(bit));
-            subset &= !bit;
-        }
-        out.len()
+        out.extend(Iter { mask: peeked });
+        peeked.count_ones() as usize
     }
 
     /// Returns `true` if the given card is still in the deck.
@@ -618,6 +732,90 @@ impl<const N: u8> IntoIterator for &Deck<N> {
     }
 }
 
+/// Check whether the x86 BMI2 instruction set is available.
+///
+/// - Short-circuits on `cfg!(target_feature = "bmi2")` for zero runtime cost
+///   when the target explicitly enables BMI2.
+/// - Caches the CPUID result so repeated checks don't re-execute the
+///   serializing instruction.
+/// - Works around the Skylake erratum (SKL052) where some steppings report
+///   BMI1/BMI2 in CPUID without actually supporting the instructions; on
+///   `GenuineIntel` we additionally require AVX, which every real BMI2 chip has.
+#[cfg(target_arch = "x86_64")]
+#[inline]
+fn bmi2_available() -> bool {
+    use core::sync::atomic::{AtomicU8, Ordering};
+
+    const UNKNOWN: u8 = 0;
+    const NO: u8 = 1;
+    const YES: u8 = 2;
+    static CACHE: AtomicU8 = AtomicU8::new(UNKNOWN);
+
+    if cfg!(target_feature = "bmi2") {
+        return true;
+    }
+
+    match CACHE.load(Ordering::Relaxed) {
+        YES => return true,
+        NO => return false,
+        _ => {}
+    }
+
+    let detected = detect_bmi2();
+    CACHE.store(if detected { YES } else { NO }, Ordering::Relaxed);
+    detected
+}
+
+#[cfg(target_arch = "x86_64")]
+fn detect_bmi2() -> bool {
+    // CPUID uses EAX as an input (leaf) and ECX as a secondary input (subleaf).
+    // These values are identifier numbers that are used by CPUID instruction to retrieve information about the CPU.
+    // The CPU returns answers in EAX, EBX, ECX, and EDX.
+    // ref : www.felixcloutier.com/x86/cpuid
+    //
+    // Set EAX=0 and call CPUID
+    // Returns
+    // EBX, EDX, ECX (ordered): CPU's manufacturer ID string (12-character ASCII)
+    // EAX: Highest Function Parameter (Maximum leaf value) supported by the CPU
+    let leaf0 = core::arch::x86_64::__cpuid(0);
+    // BMI2 lives in leaf 7 with bit 8 set in EBX
+    if leaf0.eax < 7 {
+        return false;
+    }
+
+    // Set EAX=7, ECX=0 and call CPUID
+    // returns
+    // EBX, ECX, and EDX: extended feature flags
+    // EAX: the maximum ECX value (subleaf) for EAX=7
+    let leaf7 = core::arch::x86_64::__cpuid(7);
+    // 8th EBX bit indicates BMI2 support
+    if leaf7.ebx & (1 << 8) == 0 {
+        return false;
+    }
+
+    // SKL052: some Skylake steppings set the BMI1/BMI2 CPUID bits without
+    // real support; using the instructions then raises #UD. Every genuine
+    // BMI2-capable Intel chip also reports AVX, so gate on that.
+    let vendor: [u8; 12] = {
+        let mut v = [0u8; 12];
+        v[0..4].copy_from_slice(&leaf0.ebx.to_ne_bytes());
+        v[4..8].copy_from_slice(&leaf0.edx.to_ne_bytes());
+        v[8..12].copy_from_slice(&leaf0.ecx.to_ne_bytes());
+        v
+    };
+    if &vendor == b"GenuineIntel" {
+        // Set EAX=1 and call CPUID
+        // Returns
+        // EAX: CPU Signature (stepping, model, microarchitecture codename, family information)
+        // EDX and ECX: Feature flags
+        // ECX: additional feature flags
+        let leaf1 = core::arch::x86_64::__cpuid(1);
+        return (leaf1.ecx >> 28) & 1 != 0; // AVX bit
+    }
+
+    true
+}
+
 #[inline]
 pub(crate) fn select_nth_set(mask: u64, k: u32) -> u64 {
     debug_assert!(
@@ -627,8 +825,8 @@ pub(crate) fn select_nth_set(mask: u64, k: u32) -> u64 {
     );
     #[cfg(target_arch = "x86_64")]
     {
-        if std::arch::is_x86_feature_detected!("bmi2") {
-            // SAFETY: BMI2 confirmed at runtime.
+        // SAFETY: confirm BMI2 availability - we first check the compiletime feature flag, else the runtime check
+        if bmi2_available() {
             return unsafe { core::arch::x86_64::_pdep_u64(1u64 << k, mask) };
         }
     }
