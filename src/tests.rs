@@ -696,7 +696,7 @@ fn meanings_plug_into_random_draws() {
 #[test]
 fn readme_bitmask_table_covers_all_deck_methods() {
     let deck_rs = include_str!("deck.rs");
-    let readme = include_str!("../README.md");
+    let readme = include_str!("README.md");
 
     let mut expected = extract_inherent_methods(deck_rs);
     // Constructors / free functions that live outside the inherent impl block.
