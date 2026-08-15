@@ -9,7 +9,7 @@ While it includes a standard 54-card deck preset (`StdDeck`) behind the `cards` 
 - `rand` (default): enables the random draw/peek APIs, including the `*_mask` bulk helpers.
 - `alloc` (default): enables the draw/peek `*_into`  helpers that fill an `alloc::vec::Vec`. Requires `rand`.
 - `serde`: transparent `u64` bitmask serialization for `Deck<N>`.
-- `bevy`: derives [`Component`](https://docs.rs/bevy_ecs/latest/bevy_ecs/component/index.html) and [`Reflect`](https://docs.rs/bevy_reflect/latest/bevy_reflect/trait.Reflect.html) for [`Deck<N>`], so it can be attached to entities, or wrapped in a [`bevy_ecs::prelude::Resource`](https://docs.rs/bevy/latest/bevy/prelude/trait.Resource.html).
+- `bevy`: derives [`Component`](https://docs.rs/bevy_ecs/latest/bevy_ecs/component/index.html) and [`Reflect`](https://docs.rs/bevy_reflect/latest/bevy_reflect/trait.Reflect.html) for [`Deck<N>`], so it can be attached to entities, or wrapped in a [`Resource`](https://docs.rs/bevy/latest/bevy/prelude/trait.Resource.html).
 - `cards`: exposes the `cards` module with `StdDeck` alongside its meaning subsets - standard-card suits, ranks, colors, and predefined masks.
 
 The crate is `no_std`. The default feature set includes `alloc`; disable default features and enable only the features you need for a `no_std` environment without an allocator.
