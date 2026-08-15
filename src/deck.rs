@@ -793,6 +793,9 @@ fn detect_bmi2() -> bool {
         return false;
     }
 
+    // SKL052: some Skylake steppings set the BMI1/BMI2 CPUID bits without
+    // real support; using the instructions then raises #UD. Every genuine
+    // BMI2-capable Intel chip also reports AVX, so gate on that.
     let vendor: [u8; 12] = {
         let mut v = [0u8; 12];
         v[0..4].copy_from_slice(&leaf0.ebx.to_ne_bytes());
@@ -800,17 +803,12 @@ fn detect_bmi2() -> bool {
         v[8..12].copy_from_slice(&leaf0.ecx.to_ne_bytes());
         v
     };
-
-    // SKL052: some Skylake steppings set the BMI1/BMI2 CPUID bits without
-    // real support; using the instructions then raises #UD. Every genuine
-    // BMI2-capable Intel chip also reports AVX, so gate on that.
-
-    // Set EAX=1 and call CPUID
-    // Returns
-    // EAX: CPU Signature (stepping, model, microarchitecture codename, family information)
-    // EDX and ECX: Feature flags
-    // ECX: additional feature flags
     if &vendor == b"GenuineIntel" {
+        // Set EAX=1 and call CPUID
+        // Returns
+        // EAX: CPU Signature (stepping, model, microarchitecture codename, family information)
+        // EDX and ECX: Feature flags
+        // ECX: additional feature flags
         let leaf1 = core::arch::x86_64::__cpuid(1);
         return (leaf1.ecx >> 28) & 1 != 0; // AVX bit
     }
