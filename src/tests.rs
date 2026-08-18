@@ -6,26 +6,14 @@ use std::prelude::v1::*;
 use rand::{SeedableRng, rngs::SmallRng};
 
 use crate::deck::select_nth_set;
-use crate::{Deck, full_mask, meanings, stride_mask};
+use crate::{Deck, deck, full_mask};
 
 #[cfg(feature = "cards")]
-use crate::{CARD_COUNT, FULL_DECK};
+use crate::{CARD_COUNT, FULL_DECK, Jokers, Standard, Suit};
 
 #[cfg(feature = "rand")]
 fn test_rng() -> SmallRng {
     SmallRng::seed_from_u64(0x1234_5678_9ABC_DEF0)
-}
-
-#[test]
-#[should_panic(expected = "selected card id exceeds bitmask size")]
-fn stride_mask_panics_when_index_exceeds_bitmask() {
-    let _ = stride_mask(60, 2, 3); // 60, 62, then 64 > 63
-}
-
-#[test]
-#[should_panic(expected = "selected card id exceeds bitmask size")]
-fn stride_mask_panics_with_large_step() {
-    let _ = stride_mask(60, 200, 2); // 60, then 260 > 63
 }
 
 #[test]
@@ -527,12 +515,12 @@ fn select_nth_set_selects_kth_set_bit() {
 
 // meanings
 
-const LOW: u64 = stride_mask(0, 1, 4); // ids 0, 1, 2, 3
-const SPREAD: u64 = stride_mask(1, 3, 4); // ids 1, 4, 7, 10
-const TAIL: u64 = stride_mask(14, 1, 2); // ids 14, 15
+const LOW: u64 = 0b1111; // ids 0, 1, 2, 3
+const SPREAD: u64 = (1 << 1) | (1 << 4) | (1 << 7) | (1 << 10); // ids 1, 4, 7, 10
+const TAIL: u64 = 0b11 << 14; // ids 14, 15
 
 #[test]
-fn stride_mask_builds_expected_bits() {
+fn mask_constants_build_expected_bits() {
     assert_eq!(LOW, 0b1111);
     assert_eq!(SPREAD, (1 << 1) | (1 << 4) | (1 << 7) | (1 << 10));
     assert_eq!(TAIL, 0b11 << 14);
@@ -584,34 +572,36 @@ fn draw_in_draws_only_from_the_subset_until_it_runs_out() {
     assert!(deck.contains_all(TAIL));
 }
 
-meanings! {
-    /// Which half of a 16-card deck an id falls in.
-    enum Half {
-        /// Ids 0..8.
-        Low,
-        /// Ids 8..16.
-        High,
-    }
-    from_id = |id: u8| id / 8;
-    cards = 16;
-}
+deck! {
+    struct TestDeck = Deck<16>;
 
-meanings! {
-    /// Edge id or middle id?
-    enum Zone {
-        /// Ids 1..15.
-        Middle,
-        /// Ids 0 and 15.
-        Edge,
+    subsets {
+        /// Which half of a 16-card deck an id falls in.
+        enum Half {
+            /// Ids 0..8.
+            Low,
+            /// Ids 8..16.
+            High,
+        }
+        from_id = |id: u8| id / 8;
+        cards = 16;
+
+        /// Edge id or middle id?
+        enum Zone {
+            /// Ids 1..15.
+            Middle,
+            /// Ids 0 and 15.
+            Edge,
+        }
+        from_id = |id: u8| if id == 0 || id == 15 { 1 } else { 0 };
+        cards = 16;
     }
-    from_id = |id: u8| if id == 0 || id == 15 { 1 } else { 0 };
-    cards = 16;
 }
 
 #[test]
 fn meanings_derives_masks_by_inverting_the_mapping() {
-    assert_eq!(Half::High.mask(), stride_mask(8, 1, 8));
-    assert_eq!(Half::Low.mask(), stride_mask(0, 1, 8));
+    assert_eq!(Half::High.mask(), 0b1111_1111 << 8);
+    assert_eq!(Half::Low.mask(), 0b1111_1111);
     assert_eq!(Half::ALL, full_mask::<16>());
     assert_eq!(Zone::Edge.mask(), (1 << 15) | 1);
     assert_eq!(Zone::ALL, full_mask::<16>());
@@ -638,30 +628,34 @@ fn meanings_from_id_panics_on_out_of_range_id() {
 #[cfg(feature = "cards")]
 #[should_panic(expected = "card id out of range")]
 fn suit_from_id_panics_on_joker() {
-    let _ = crate::cards::Suit::from_id(52);
+    let _ = crate::Suit::from_id(52);
 }
 
 #[test]
 #[cfg(feature = "cards")]
 #[should_panic(expected = "card id out of range")]
 fn rank_from_id_panics_on_joker() {
-    let _ = crate::cards::Rank::from_id(52);
+    let _ = crate::Rank::from_id(52);
 }
 
 #[test]
 #[cfg(feature = "cards")]
 #[should_panic(expected = "card id out of range")]
 fn color_from_id_panics_on_joker() {
-    let _ = crate::cards::Color::from_id(52);
+    let _ = crate::Color::from_id(52);
 }
 
-meanings! {
-    /// Too many cards for a u64 bitmask.
-    enum Oversized {
-        Only,
+deck! {
+    struct OversizedDeck = Deck<65>;
+
+    subsets {
+        /// Too many cards for a u64 bitmask.
+        enum Oversized {
+            Only,
+        }
+        from_id = |id: u8| { let _ = id; 0 };
+        cards = 65;
     }
-    from_id = |id: u8| { let _ = id; 0 };
-    cards = 65;
 }
 
 #[test]
@@ -685,6 +679,77 @@ fn meanings_plug_into_random_draws() {
     let edge = deck.draw_in(&mut rng, Zone::Edge.mask()).unwrap();
     assert!(edge == 0 || edge == 15);
     assert_eq!(deck.count_in(Zone::Edge.mask()), 1);
+}
+
+#[test]
+fn typed_subset_queries_work() {
+    let deck = TestDeck::default();
+    assert_eq!(deck.count_subset(Half::Low), 8);
+    assert!(deck.contains_any_subset(Zone::Edge));
+    assert!(deck.contains_all_subset(Half::High));
+    assert_eq!(
+        deck.iter_subset(Zone::Edge).collect::<Vec<_>>(),
+        vec![0, 15]
+    );
+    assert_eq!((&deck).into_iter().take(2).collect::<Vec<_>>(), vec![0, 1]);
+    assert_eq!(deck.first_subset(Zone::Edge), Some(0));
+    assert_eq!(deck.last_subset(Zone::Edge), Some(15));
+    assert_eq!(deck.nth_subset(Zone::Edge, 1), Some(15));
+}
+
+#[test]
+fn typed_subset_mutations_work() {
+    let mut deck = TestDeck::default();
+    assert_eq!(deck.remove_all_subset(Half::Low), 8);
+    assert_eq!(deck.count_subset(Half::Low), 0);
+
+    deck.restock();
+    deck.retain_subset(Half::High);
+    assert_eq!(deck.remaining(), 8);
+
+    deck.restock();
+    deck.toggle_all_subset(Half::Low);
+    assert_eq!(deck.count_subset(Half::Low), 0);
+}
+
+#[test]
+#[cfg(feature = "rand")]
+fn typed_subset_random_methods_work() {
+    let mut deck = TestDeck::default();
+    let mut rng = test_rng();
+
+    let edge = deck.draw_subset(&mut rng, Zone::Edge).unwrap();
+    assert!(edge == 0 || edge == 15);
+    assert_eq!(deck.count_subset(Zone::Edge), 1);
+
+    deck.restock();
+    let hand = deck.draw_subset_mask(&mut rng, Half::Low, 4);
+    assert_eq!(hand.count_ones(), 4);
+    assert!(hand & !Half::Low.mask() == 0);
+
+    deck.restock();
+    let peeked = deck.peek_subset_mask(&mut rng, Zone::Edge, 2);
+    assert_eq!(peeked.count_ones(), 2);
+}
+
+#[test]
+#[cfg(all(feature = "cards", feature = "rand"))]
+fn standard_subset_methods_work() {
+    let mut deck = Standard::default();
+    assert_eq!(deck.count_subset(Suit::Hearts), 13);
+    assert_eq!(deck.count_subset(Jokers), 2);
+
+    let heart = deck.draw_subset(&mut test_rng(), Suit::Hearts).unwrap();
+    assert_eq!(heart / 13, 2);
+    assert_eq!(deck.count_subset(Suit::Hearts), 12);
+}
+
+#[test]
+#[cfg(feature = "cards")]
+fn standard_deref_to_raw_deck_api() {
+    let mut deck = Standard::default();
+    deck.remove_all(Suit::Hearts.mask());
+    assert_eq!(deck.count_in(Suit::Hearts.mask()), 0);
 }
 
 // Drift guard: keep the README bitmask-operations table in sync with src/deck.rs.

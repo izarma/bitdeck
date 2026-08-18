@@ -26,8 +26,8 @@ pub const fn full_mask<const N: u8>() -> u64 {
 /// The `cards` feature provides a standard 52-card deck plus two jokers.
 ///
 /// Subset APIs accept a `u64` mask of card ids, typically built with
-/// [`crate::stride_mask`] or [`crate::meanings!`]. Bits at or above `N` are
-/// ignored by subset queries, mutations, and draws.
+/// [`crate::deck!`]. Bits at or above `N` are ignored by subset queries,
+/// mutations, and draws.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(
     feature = "bevy",
@@ -298,10 +298,10 @@ impl<const N: u8> Deck<N> {
     /// # Examples
     ///
     /// ```
-    /// use bitdeck::{Deck, stride_mask};
+    /// use bitdeck::Deck;
     /// use rand::{SeedableRng, rngs::SmallRng};
     ///
-    /// const LOW: u64 = stride_mask(0, 1, 4); // ids 0, 1, 2, 3
+    /// const LOW: u64 = 0b1111; // ids 0, 1, 2, 3
     ///
     /// let deck = Deck::<16>::default();
     /// let mut rng = SmallRng::seed_from_u64(420);
@@ -357,17 +357,18 @@ impl<const N: u8> Deck<N> {
     /// # Examples
     ///
     /// ```
-    /// use bitdeck::{Deck, stride_mask};
+    /// use bitdeck::Deck;
     /// use rand::{SeedableRng, rngs::SmallRng};
     ///
-    /// const HEARTS: u64 = stride_mask(26, 1, 13);
+    /// // A subset is a mask with one bit per card ID.
+    /// const SUBSET: u64 = (1 << 1) | (1 << 4) | (1 << 6);
     ///
-    /// let mut deck = Deck::<54>::default();
+    /// let mut deck = Deck::<8>::default();
     /// let mut rng = SmallRng::seed_from_u64(420);
     ///
-    /// let card = deck.draw_in(&mut rng, HEARTS).unwrap();
-    /// assert_eq!(card / 13, 2); // every drawn card is a heart
-    /// assert_eq!(deck.count_in(HEARTS), 12);
+    /// let card = deck.draw_in(&mut rng, SUBSET).unwrap();
+    /// assert_ne!(SUBSET & (1 << card), 0);
+    /// assert_eq!(deck.count_in(SUBSET), 2);
     /// ```
     #[cfg(feature = "rand")]
     #[inline]
@@ -417,10 +418,10 @@ impl<const N: u8> Deck<N> {
     /// # Examples
     ///
     /// ```
-    /// use bitdeck::{Deck, stride_mask};
+    /// use bitdeck::Deck;
     /// use rand::{SeedableRng, rngs::SmallRng};
     ///
-    /// const LOW: u64 = stride_mask(0, 1, 4); // ids 0, 1, 2, 3
+    /// const LOW: u64 = 0b1111; // ids 0, 1, 2, 3
     ///
     /// let mut deck = Deck::<16>::default();
     /// let mut rng = SmallRng::seed_from_u64(420);
@@ -485,10 +486,10 @@ impl<const N: u8> Deck<N> {
     /// # Examples
     ///
     /// ```
-    /// use bitdeck::{Deck, stride_mask};
+    /// use bitdeck::Deck;
     /// use rand::{SeedableRng, rngs::SmallRng};
     ///
-    /// const HEARTS: u64 = stride_mask(26, 1, 13);
+    /// const HEARTS: u64 = ((1u64 << 13) - 1) << 26; // ids 26..=38
     ///
     /// let mut deck = Deck::<54>::default();
     /// let mut rng = SmallRng::seed_from_u64(420);
@@ -562,12 +563,13 @@ impl<const N: u8> Deck<N> {
     /// # Examples
     ///
     /// ```
-    /// use bitdeck::{Deck, stride_mask};
+    /// use bitdeck::Deck;
     ///
-    /// const KINGS: u64 = stride_mask(12, 13, 4);
+    /// // Each set bit selects a card ID.
+    /// const SUBSET: u64 = (1 << 1) | (1 << 4) | (1 << 6);
     ///
-    /// let deck = Deck::<54>::default();
-    /// assert!(deck.contains_any(KINGS));
+    /// let deck = Deck::<8>::default();
+    /// assert!(deck.contains_any(SUBSET));
     /// ```
     #[inline]
     #[must_use]
@@ -600,9 +602,9 @@ impl<const N: u8> Deck<N> {
     /// # Examples
     ///
     /// ```
-    /// use bitdeck::{Deck, stride_mask};
+    /// use bitdeck::Deck;
     ///
-    /// const HEARTS: u64 = stride_mask(26, 1, 13);
+    /// const HEARTS: u64 = ((1u64 << 13) - 1) << 26; // ids 26..=38
     ///
     /// let deck = Deck::<54>::default();
     /// assert_eq!(deck.count_in(HEARTS), 13);

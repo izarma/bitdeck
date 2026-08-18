@@ -6,7 +6,7 @@
 //!
 //! Run with: cargo run --example peek --features=cards
 
-use bitdeck::{StdDeck, cards::card_name};
+use bitdeck::{Standard, cards::card_name};
 use rand::{SeedableRng, rngs::SmallRng};
 use std::collections::VecDeque;
 
@@ -18,7 +18,7 @@ use std::collections::VecDeque;
 ///   keep-or-shuffle decision.
 /// - Everything else lives in the bitmask: unordered, uniform random.
 struct ScryDeck {
-    deck: StdDeck,
+    deck: Standard,
     top: VecDeque<u8>,
     staging: Vec<u8>,
 }
@@ -26,7 +26,7 @@ struct ScryDeck {
 impl ScryDeck {
     fn new() -> Self {
         Self {
-            deck: StdDeck::default(),
+            deck: Standard::default(),
             top: VecDeque::new(),
             staging: Vec::new(),
         }

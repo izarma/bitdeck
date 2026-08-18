@@ -8,10 +8,7 @@
 
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
-use bitdeck::{
-    StdDeck,
-    cards::{Card, STANDARD},
-};
+use bitdeck::{Card, Standard, StandardCards};
 use rand::{SeedableRng, rngs::SmallRng};
 
 /// Marker for entities that carry their own deck.
@@ -20,7 +17,7 @@ struct Player;
 
 /// A single global deck, wrapped as a Bevy `Resource`.
 #[derive(Resource)]
-struct GameDeck(StdDeck);
+struct GameDeck(Standard);
 
 fn main() {
     App::new()
@@ -32,24 +29,24 @@ fn main() {
 }
 
 fn setup_shared_deck(mut commands: Commands) {
-    commands.insert_resource(GameDeck(StdDeck::default()));
+    commands.insert_resource(GameDeck(Standard::default()));
 }
 
 fn spawn_players(mut commands: Commands) {
     // Each player gets their own deck component as their hands.
-    commands.spawn((Player, StdDeck::empty()));
-    commands.spawn((Player, StdDeck::empty()));
+    commands.spawn((Player, Standard::empty()));
+    commands.spawn((Player, Standard::empty()));
 }
 
 fn draw_from_game_deck(
     mut game_deck: ResMut<GameDeck>,
-    mut players: Query<&mut StdDeck, With<Player>>,
+    mut players: Query<&mut Standard, With<Player>>,
 ) {
     let mut rng = SmallRng::seed_from_u64(420);
 
     for (i, mut hand) in players.iter_mut().enumerate() {
         // Draw 5 random non-joker cards from the shared deck into this player's hand.
-        let drawn = game_deck.0.draw_in_mask(&mut rng, STANDARD, 5);
+        let drawn = game_deck.0.draw_subset_mask(&mut rng, StandardCards, 5);
         hand.insert_all(drawn);
 
         println!("Player {} drew:", i + 1);

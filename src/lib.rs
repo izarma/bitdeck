@@ -10,10 +10,26 @@ extern crate alloc;
 extern crate std;
 
 mod deck;
-mod meaning;
+mod preset;
+mod subset;
 
 pub use deck::*;
-pub use meaning::*;
+pub use subset::*;
+
+#[cfg(feature = "cards")]
+pub use preset::*;
+
+#[cfg(feature = "alloc")]
+#[doc(hidden)]
+pub mod __alloc {
+    pub use ::alloc::*;
+}
+
+#[cfg(feature = "rand")]
+#[doc(hidden)]
+pub mod __rand {
+    pub use ::rand::*;
+}
 
 #[cfg(test)]
 mod tests;
