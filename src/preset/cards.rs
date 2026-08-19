@@ -113,7 +113,7 @@ impl Suit {
 }
 
 /// A standard playing card or joker.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Card {
     /// A standard card with a suit and rank.
     Standard(Suit, Rank),

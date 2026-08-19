@@ -67,6 +67,11 @@ impl<const N: u8> Deck<N> {
     /// presence also panics, since they are not cards. A mask produced by
     /// [`as_bits`](Self::as_bits) always round-trips.
     ///
+    /// # Panics
+    ///
+    /// Panics in debug builds if `mask` contains bits at or above `N`, or if
+    /// `N` is greater than 64.
+    ///
     /// # Examples
     ///
     /// ```
@@ -77,15 +82,13 @@ impl<const N: u8> Deck<N> {
     /// ```
     #[inline]
     #[must_use]
-    pub fn from_bits(mask: u64) -> Self {
+    pub const fn from_bits(mask: u64) -> Self {
         const { assert!(N <= 64, "deck size must fit in a u64 bitmask") };
-        debug_assert!(
-            mask & !full_mask::<N>() == 0,
-            "bits at or above deck size are not cards: {mask:#066b}"
-        );
-        Self {
-            mask: mask & full_mask::<N>(),
+        let masked = mask & full_mask::<N>();
+        if cfg!(debug_assertions) {
+            assert!(masked == mask, "bits at or above deck size are not cards");
         }
+        Self { mask: masked }
     }
 
     /// Returns the raw bitmask of the cards that remain.
@@ -114,15 +117,18 @@ impl<const N: u8> Deck<N> {
     /// were removed.
     #[inline]
     pub const fn remove_all(&mut self, mask: u64) -> u32 {
+        let mask = mask & full_mask::<N>();
         let removed = self.count_in(mask);
         self.mask &= !mask;
         removed
     }
 
     /// Keeps only the remaining cards selected by `mask`.
+    ///
+    /// Bits at or above `N` are ignored.
     #[inline]
     pub const fn retain(&mut self, mask: u64) {
-        self.mask &= mask;
+        self.mask &= mask & full_mask::<N>();
     }
 
     /// Returns the number of cards left in the deck.

@@ -1,6 +1,6 @@
 # bitdeck
 
-bitdeck is a fixed-capacity (N ≤ 64) **Bitmask**. [`Deck<N>`] stores subset membership as a `u64`, enabling deterministic subset queries, bulk mutations, and (with the `rand` feature) uniform random draws without replacement and non-destructive peeks.
+bitdeck is a fixed-capacity (N ≤ 64) [**Bitmask**](https://en.wikipedia.org/wiki/Mask_(computing)). [`Deck<N>`] stores subset membership as a `u64`, enabling deterministic subset queries, bulk mutations, and (with the `rand` feature) uniform random draws without replacement and non-destructive peeks.
 
 While it includes a standard 54-card deck preset ([`Standard`]) behind the `cards` feature, [`Deck<N>`] is completely generic and can be used for loot tables, turn based action queues, shuffle bags etc.
 
@@ -71,5 +71,5 @@ portable build still auto-detects BMI2 via CPUID and uses it when available.
 ## Migrating from 0.1.x
 
 Version 0.2.0 removes the `meanings!` macro, `stride_mask`, and `StdDeck` in
-favor of the `deck!` macro and typed subsets. See [`CHANGELOG.md`] for a short
+favor of the `deck!` macro and typed subsets. See [CHANGELOG.md](CHANGELOG.md) for a short
 migration guide.

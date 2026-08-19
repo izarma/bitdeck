@@ -8,7 +8,7 @@
 /// A subset of a specific deck `D`.
 ///
 /// Implemented by classification enums and fixed-subset unit structs generated
-/// by [`deck!`](crate::deck). The deck newtype then accepts any `impl Subset<D>`
+/// by [`deck!`](crate::deck!). The deck newtype then accepts any `impl Subset<D>`
 /// in its typed subset methods such as `count_subset`.
 ///
 /// The trait is intentionally non-const; for const mask algebra use the raw
@@ -21,6 +21,9 @@
 /// <https://rust-lang.github.io/goals/2024h2/const-traits.html>
 pub trait Subset<D>: Copy {
     /// Returns the raw `u64` bitmask of card ids in this subset.
+    ///
+    /// Use this with [`Deck<N>`](crate::Deck) methods or with the typed subset
+    /// methods on the generated deck newtype.
     fn mask(self) -> u64;
 }
 
@@ -149,7 +152,7 @@ macro_rules! deck {
             /// Creates a deck from a raw bitmask.
             #[inline]
             #[must_use]
-            pub fn from_bits(mask: u64) -> Self {
+            pub const fn from_bits(mask: u64) -> Self {
                 Self($crate::Deck::<$N>::from_bits(mask))
             }
 
@@ -381,11 +384,19 @@ macro_rules! deck {
             pub const fn from_id(id: u8) -> Self {
                 assert!($cards <= 64, "deck size must fit in a u64 bitmask");
                 if id >= $cards {
-                    core::panic!(concat!("card id out of range for ", stringify!($E)));
+                    core::panic!(concat!(
+                        "card id out of range for ",
+                        stringify!($E),
+                        " (id is not covered by cards)"
+                    ));
                 }
                 let index = { let $id = id; $body_expr };
                 $( if index == Self::$variant as u8 { return Self::$variant; } )*
-                core::panic!(concat!("card id has no ", stringify!($E)));
+                core::panic!(concat!(
+                    "card id has no ",
+                    stringify!($E),
+                    " (from_id returned an invalid variant index)"
+                ));
             }
 
             /// Returns the bitmask of every card id with this meaning,

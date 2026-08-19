@@ -146,6 +146,19 @@ fn serde_round_trips_as_transparent_u64() {
     assert_eq!(restored, deck);
 }
 
+#[cfg(feature = "serde")]
+#[cfg(feature = "cards")]
+#[test]
+fn typed_deck_serde_round_trips_as_transparent_u64() {
+    let mut deck = crate::Standard::default();
+    deck.remove(0);
+    deck.remove(53);
+    let text = ron::to_string(&deck).unwrap();
+    assert_eq!(text, deck.as_bits().to_string());
+    let restored: crate::Standard = ron::from_str(&text).unwrap();
+    assert_eq!(restored, deck);
+}
+
 #[cfg(feature = "bevy")]
 #[test]
 fn deck_is_a_usable_bevy_component() {
