@@ -22,13 +22,13 @@ pub use preset::*;
 #[cfg(feature = "alloc")]
 #[doc(hidden)]
 pub mod __alloc {
-    pub use ::alloc::*;
+    pub use ::alloc::vec::Vec;
 }
 
 #[cfg(feature = "rand")]
 #[doc(hidden)]
 pub mod __rand {
-    pub use ::rand::*;
+    pub use ::rand::Rng;
 }
 
 #[cfg(test)]

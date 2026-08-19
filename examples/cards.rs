@@ -15,7 +15,7 @@ fn mask_names(mask: u64) -> String {
         .join(", ")
 }
 
-fn deck_names(deck: &Standard) -> String {
+fn deck_names(deck: Standard) -> String {
     mask_names(deck.as_bits())
 }
 
@@ -33,7 +33,7 @@ fn main() {
     let mut player_b = Standard::empty();
     let mut round = 1;
 
-    while deck.count_subset(StandardCards) >= (hand_size * 2) as u32 {
+    while deck.count_subset(StandardCards) >= 10 {
         let hand_a = deck.draw_subset_mask(&mut rng, StandardCards, hand_size);
         let hand_b = deck.draw_subset_mask(&mut rng, StandardCards, hand_size);
         player_a.insert_all(hand_a);
@@ -60,8 +60,8 @@ fn main() {
         player_b.remaining(),
         deck.remaining()
     );
-    println!("\nPlayer A's hand: {}", deck_names(&player_a));
-    println!("Player B's hand: {}", deck_names(&player_b));
+    println!("\nPlayer A's hand: {}", deck_names(player_a));
+    println!("Player B's hand: {}", deck_names(player_b));
 
     println!("\nSpades left: {}", deck.count_subset(Suit::Spades));
     println!("Queens left: {}", deck.count_subset(Rank::Queen));
@@ -76,7 +76,7 @@ fn main() {
     deck.restock();
     println!("Restocked.");
     let black = deck.remove_all(Color::Black.mask());
-    println!("Drew {} black cards", black);
+    println!("Drew {black} black cards");
     println!(
         "Black left: {}; Red left: {}",
         deck.count_subset(Color::Black),

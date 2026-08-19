@@ -1,6 +1,6 @@
 [package]
 name = "bitdeck"
-version = "0.1.3"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.97"
 description = "64-bit Bitmask with subset mappings."
@@ -13,7 +13,7 @@ readme = "README.md"
 [features]
 default = ["rand", "alloc"]
 rand = ["dep:rand"]
-alloc = ["rand"]
+alloc = ["rand"] # *_into helpers need rand because they build on draw/peek
 serde = ["dep:serde"]
 bevy = ["dep:bevy_ecs", "dep:bevy_reflect"]
 cards = []

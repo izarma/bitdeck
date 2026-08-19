@@ -217,7 +217,7 @@ impl<const N: u8> Deck<N> {
     #[inline]
     #[must_use]
     pub fn last(&self) -> Option<u8> {
-        (!self.is_empty()).then(|| self.mask.ilog2() as u8)
+        (!self.is_empty()).then(|| card_id(1u64 << self.mask.ilog2()))
     }
 
     /// Returns the `k`th remaining card selected by `mask`, in ascending
@@ -622,7 +622,7 @@ impl<const N: u8> Deck<N> {
     #[inline]
     #[must_use]
     pub fn chance(&self, mask: u64) -> f64 {
-        self.count_in(mask) as f64 / self.remaining() as f64
+        f64::from(self.count_in(mask)) / f64::from(self.remaining())
     }
 
     /// Puts `card` back into the deck. No effect if it is already present.

@@ -14,6 +14,10 @@
 /// The trait is intentionally non-const; for const mask algebra use the raw
 /// `u64` API on [`Deck<N>`](crate::Deck).
 ///
+/// Because `Subset` requires [`Copy`], user-defined types that are not `Copy`
+/// cannot implement it. This matches the intended use for small, value-like
+/// classifications.
+///
 /// <https://rust-lang.github.io/goals/2024h2/const-traits.html>
 pub trait Subset<D>: Copy {
     /// Returns the raw `u64` bitmask of card ids in this subset.
@@ -23,8 +27,8 @@ pub trait Subset<D>: Copy {
 /// Defines a deck newtype, its classification enums, and its fixed subsets.
 ///
 /// The generated newtype wraps [`Deck<N>`](crate::Deck), implements
-/// `Default`, `Deref`, and `DerefMut`, and adds typed `_subset` methods that
-/// accept any `impl Subset<D>`.
+/// `Default`, `Deref`, `DerefMut`, and `IntoIterator for &Name`, and adds typed
+/// `_subset` methods that accept any `impl Subset<D>`.
 ///
 /// # Syntax
 ///
@@ -35,26 +39,41 @@ pub trait Subset<D>: Copy {
 ///     subsets {
 ///         // Classification enum: each variant maps to a bitmask.
 ///         pub enum Suit { Clubs, Diamonds, Hearts, Spades }
-///         from_id = |id: u8| id / 13;
-///         cards = 52;
+///         from_id = |id: u8| id / 13;   // must return 0, 1, 2, ...
+///         cards = 52;                   // const expression, must be <= 64
 ///
 ///         // Fixed subset: a unit struct with an explicit mask.
 ///         pub struct Jokers {
-///             mask = (1u64 << 52) | (1u64 << 53);
+///             mask = (1u64 << 52) | (1u64 << 53); // const expression
 ///         }
 ///     }
 /// }
 /// ```
 ///
+/// `cards` and fixed-subset `mask` must be **const expressions** because they
+/// are evaluated inside generated `const fn`s.
+///
+/// The `subsets` block may be omitted if you only need the deck newtype.
+///
 /// Classification enums receive:
-/// - `from_id(id: u8) -> Self` — the mapping; panics on out-of-range ids.
+/// - `from_id(id: u8) -> Self` — the mapping; panics on out-of-range ids or
+///   ids whose `from_id` value does not correspond to a variant.
 /// - `mask(self) -> u64` — the bitmask of every mapped card id.
 /// - `ALL: u64` — the union of all variant masks.
 /// - `impl Subset<Newtype>` so variant values work as typed subsets.
 ///
+/// The `from_id` closure must return the variant's discriminant for each
+/// covered id. Variants receive discriminants `0, 1, 2, …` in declaration
+/// order, so for default-discriminant enums the closure returns the zero-based
+/// index of the variant.
+///
 /// Fixed unit structs receive:
 /// - `mask(self) -> u64` — the explicit mask.
 /// - `impl Subset<Newtype>` so the unit value works as a typed subset.
+///
+/// Generated `Subset` impls cannot be overridden: the inherent `mask()` method
+/// and the trait impl are emitted together, and a user-written impl would
+/// conflict with the macro-generated one.
 ///
 /// # Example
 ///
@@ -62,10 +81,10 @@ pub trait Subset<D>: Copy {
 /// use bitdeck::{Deck, deck};
 ///
 /// deck! {
-///     pub struct Short = Deck<10>;
+///     struct Short = Deck<10>;
 ///
 ///     subsets {
-///         pub enum Half { Low, High }
+///         enum Half { Low, High }
 ///         from_id = |id: u8| id / 5;
 ///         cards = 10;
 ///     }
@@ -248,7 +267,7 @@ macro_rules! deck {
                 rng: &mut impl $crate::__rand::Rng,
                 s: S,
                 count: usize,
-                out: &mut $crate::__alloc::vec::Vec<u8>,
+                out: &mut $crate::__alloc::Vec<u8>,
             ) -> usize {
                 self.draw_in_into(rng, s.mask(), count, out)
             }
@@ -286,45 +305,46 @@ macro_rules! deck {
                 rng: &mut impl $crate::__rand::Rng,
                 s: S,
                 count: usize,
-                out: &mut $crate::__alloc::vec::Vec<u8>,
+                out: &mut $crate::__alloc::Vec<u8>,
             ) -> usize {
                 self.peek_in_into(rng, s.mask(), count, out)
             }
         }
 
-        $crate::deck! {@subsets $Name [] $($tokens)*}
+        $crate::deck! {@subsets $Name $N [] $($tokens)*}
     };
 
     // Terminal rule: emit all accumulated subset items.
-    (@subsets $Name:ident [$($gen:tt)*]) => { $($gen)* };
+    (@subsets $Name:ident $N:literal [$($gen:tt)*]) => { $($gen)* };
 
     // Classification enum subset.
-    (@subsets $Name:ident [$($gen:tt)*]
+    (@subsets $Name:ident $N:literal [$($gen:tt)*]
         $(#[$emeta:meta])*
         $evis:vis enum $E:ident $body:tt
         from_id = |$id:ident : u8| $body_expr:expr;
         cards = $cards:expr;
         $($rest:tt)*
     ) => {
-        $crate::deck! {@subsets $Name [
+        $crate::deck! {@subsets $Name $N [
             $($gen)*
             $(#[$emeta])*
             #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
             $evis enum $E $body
             $crate::deck! {@enum_impl $E $body $id ($body_expr) ($cards)}
             impl $crate::Subset<$Name> for $E {
+                // Resolves to the inherent `E::mask`, not the trait method.
                 fn mask(self) -> u64 { self.mask() }
             }
         ] $($rest)*}
     };
 
     // Fixed unit-struct subset.
-    (@subsets $Name:ident [$($gen:tt)*]
+    (@subsets $Name:ident $N:literal [$($gen:tt)*]
         $(#[$smeta:meta])*
         $svis:vis struct $S:ident { mask = $mask_expr:expr; }
         $($rest:tt)*
     ) => {
-        $crate::deck! {@subsets $Name [
+        $crate::deck! {@subsets $Name $N [
             $($gen)*
             $(#[$smeta])*
             #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -336,8 +356,13 @@ macro_rules! deck {
                 pub const fn mask(self) -> u64 { $mask_expr }
             }
             impl $crate::Subset<$Name> for $S {
+                // Resolves to the inherent `S::mask`, not the trait method.
                 fn mask(self) -> u64 { self.mask() }
             }
+            const _: () = assert!(
+                $mask_expr & !$crate::full_mask::<$N>() == 0,
+                concat!("fixed subset `", stringify!($S), "` has bits above the deck size")
+            );
         ] $($rest)*}
     };
 
@@ -356,7 +381,7 @@ macro_rules! deck {
             pub const fn from_id(id: u8) -> Self {
                 assert!($cards <= 64, "deck size must fit in a u64 bitmask");
                 if id >= $cards {
-                    core::panic!("card id out of range");
+                    core::panic!(concat!("card id out of range for ", stringify!($E)));
                 }
                 let index = { let $id = id; $body_expr };
                 $( if index == Self::$variant as u8 { return Self::$variant; } )*

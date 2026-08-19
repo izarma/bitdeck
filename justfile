@@ -10,6 +10,8 @@ doc:
     cargo doc --all-features --no-deps --open
 test:
     cargo test --all-features
+clippy:
+    cargo clippy --all-targets --all-features -- -D clippy::pedantic
 
 
 egs: eg-cards eg-bevy eg-peek eg-weighted

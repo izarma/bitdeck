@@ -139,10 +139,30 @@ impl Card {
     }
 }
 
+impl core::fmt::Display for Rank {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(match self {
+            Rank::Ace => "Ace",
+            Rank::Two => "2",
+            Rank::Three => "3",
+            Rank::Four => "4",
+            Rank::Five => "5",
+            Rank::Six => "6",
+            Rank::Seven => "7",
+            Rank::Eight => "8",
+            Rank::Nine => "9",
+            Rank::Ten => "10",
+            Rank::Jack => "Jack",
+            Rank::Queen => "Queen",
+            Rank::King => "King",
+        })
+    }
+}
+
 impl core::fmt::Display for Card {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Card::Standard(suit, rank) => write!(f, "{:#?}{}", rank, suit.symbol()),
+            Card::Standard(suit, rank) => write!(f, "{}{}", rank, suit.symbol()),
             Card::Joker(n) => write!(f, "Joker {n}"),
         }
     }

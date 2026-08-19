@@ -357,7 +357,7 @@ fn draw_mask_draws_up_to_count_and_removes_them() {
     let hand = deck.draw_mask(&mut rng, 5);
     assert_eq!(hand.count_ones(), 5);
     assert_eq!(deck.remaining(), 11);
-    assert!(deck.as_bits() & hand == 0);
+    assert_eq!(deck.as_bits() & hand, 0);
 }
 
 #[test]
@@ -378,7 +378,7 @@ fn draw_in_mask_respects_subset_and_stops_early() {
     let mut rng = test_rng();
     let hand = deck.draw_in_mask(&mut rng, SUBSET, 10);
     assert_eq!(hand.count_ones(), 4);
-    assert!(hand & !SUBSET == 0);
+    assert_eq!(hand & !SUBSET, 0);
     assert_eq!(deck.remaining(), 12);
     assert!(!deck.contains_any(SUBSET));
 }
@@ -402,15 +402,15 @@ fn peek_in_mask_respects_subset_and_short_deck() {
     let mut rng = test_rng();
     let seen = deck.peek_in_mask(&mut rng, SUBSET, 10);
     assert_eq!(seen.count_ones(), 4);
-    assert!(seen & !SUBSET == 0);
+    assert_eq!(seen & !SUBSET, 0);
     assert_eq!(deck.count_in(SUBSET), 4);
 }
 
 #[test]
 fn chance_is_the_fraction_of_remaining_cards_in_a_subset() {
     let deck = Deck::<8>::from_bits(0b1011_0010);
-    assert_eq!(deck.chance(0b0011_0000), 0.5);
-    assert_eq!(deck.chance(0b1_0000_0000), 0.0);
+    assert!((deck.chance(0b0011_0000) - 0.5).abs() < f64::EPSILON);
+    assert!(deck.chance(0b1_0000_0000).abs() < f64::EPSILON);
     assert!(Deck::<8>::empty().chance(u64::MAX).is_nan());
 }
 
@@ -725,7 +725,7 @@ fn typed_subset_random_methods_work() {
     deck.restock();
     let hand = deck.draw_subset_mask(&mut rng, Half::Low, 4);
     assert_eq!(hand.count_ones(), 4);
-    assert!(hand & !Half::Low.mask() == 0);
+    assert_eq!(hand & !Half::Low.mask(), 0);
 
     deck.restock();
     let peeked = deck.peek_subset_mask(&mut rng, Zone::Edge, 2);
@@ -892,4 +892,132 @@ fn find_matching_brace(source: &str, body_start: usize) -> usize {
         }
     }
     pos - 1
+}
+
+// Additional tests for the typed-subset macro and the `cards` preset.
+
+#[cfg(feature = "cards")]
+use crate::{Aces, Card, Color, FaceCards, JOKER_START, Rank, StandardCards};
+
+#[cfg(all(feature = "cards", feature = "alloc"))]
+use crate::card_name;
+
+#[test]
+#[cfg(feature = "cards")]
+fn standard_masks_match_id_layout() {
+    let clubs = (1u64 << 13) - 1;
+    let diamonds = clubs << 13;
+    let hearts = clubs << 26;
+    let spades = clubs << 39;
+
+    assert_eq!(Suit::Clubs.mask(), clubs);
+    assert_eq!(Suit::Diamonds.mask(), diamonds);
+    assert_eq!(Suit::Hearts.mask(), hearts);
+    assert_eq!(Suit::Spades.mask(), spades);
+    assert_eq!(Suit::ALL, full_mask::<52>());
+
+    assert_eq!(Color::Red.mask(), diamonds | hearts);
+    assert_eq!(Color::Black.mask(), clubs | spades);
+    assert_eq!(Color::ALL, full_mask::<52>());
+
+    let ace_mask = (1u64 << 0) | (1u64 << 13) | (1u64 << 26) | (1u64 << 39);
+    assert_eq!(Rank::Ace.mask(), ace_mask);
+    assert_eq!(Aces.mask(), ace_mask);
+
+    // Face cards are Jack, Queen, King in every suit.
+    let face_mask = Rank::Jack.mask() | Rank::Queen.mask() | Rank::King.mask();
+    assert_eq!(FaceCards.mask(), face_mask);
+    assert_eq!(face_mask.count_ones(), 12);
+    assert_eq!(face_mask & !full_mask::<52>(), 0);
+
+    assert_eq!(StandardCards.mask(), Suit::ALL);
+    assert_eq!(
+        Jokers.mask(),
+        (1u64 << JOKER_START) | (1u64 << (JOKER_START + 1))
+    );
+}
+
+#[test]
+#[cfg(feature = "cards")]
+fn card_from_id_and_card_name_work() {
+    assert_eq!(Card::from_id(0), Card::Standard(Suit::Clubs, Rank::Ace));
+    assert_eq!(Card::from_id(13), Card::Standard(Suit::Diamonds, Rank::Ace));
+    assert_eq!(Card::from_id(51), Card::Standard(Suit::Spades, Rank::King));
+    assert_eq!(Card::from_id(JOKER_START), Card::Joker(0));
+    assert_eq!(Card::from_id(JOKER_START + 1), Card::Joker(1));
+}
+
+#[test]
+#[cfg(all(feature = "cards", feature = "alloc"))]
+fn card_name_renders_expected_strings() {
+    assert_eq!(card_name(0), "Ace♣");
+    assert_eq!(card_name(12), "King♣");
+    assert_eq!(card_name(13), "Ace♦");
+    assert_eq!(card_name(51), "King♠");
+    assert_eq!(card_name(JOKER_START), "Joker 0");
+    assert_eq!(card_name(JOKER_START + 1), "Joker 1");
+}
+
+deck! {
+    struct NoSubsetsDeck = Deck<8>;
+    subsets {}
+}
+
+#[test]
+fn empty_subsets_block_generates_newtype_only() {
+    let deck = NoSubsetsDeck::default();
+    assert_eq!(deck.remaining(), 8);
+    assert!(deck.is_full());
+}
+
+deck! {
+    struct HoleDeck = Deck<2>;
+
+    subsets {
+        enum Hole { A, B }
+        from_id = |id: u8| if id == 0 { 2 } else { 1 };
+        cards = 2;
+    }
+}
+
+#[test]
+#[should_panic(expected = "card id has no Hole")]
+fn meanings_panics_when_mapping_has_no_variant() {
+    let _ = Hole::from_id(0);
+}
+
+#[test]
+#[cfg(feature = "rand")]
+fn typed_subset_single_peek_works() {
+    let deck = TestDeck::default();
+    let mut rng = test_rng();
+    let before = deck;
+
+    let card = deck.peek_subset(&mut rng, Zone::Edge).unwrap();
+    assert!(card == 0 || card == 15);
+    assert_eq!(deck, before);
+
+    let empty = TestDeck::empty();
+    assert!(empty.peek_subset(&mut rng, Zone::Edge).is_none());
+}
+
+#[test]
+#[cfg(all(feature = "rand", feature = "alloc"))]
+fn typed_subset_into_helpers_work() {
+    let mut deck = TestDeck::default();
+    let mut rng = test_rng();
+
+    let mut drawn = vec![255];
+    let n = deck.draw_subset_into(&mut rng, Half::Low, 4, &mut drawn);
+    assert_eq!(n, 4);
+    assert_eq!(drawn.len(), 4);
+    assert!(drawn.iter().all(|&c| c < 8));
+    assert_eq!(deck.count_subset(Half::Low), 4);
+
+    deck.restock();
+    let mut peeked = vec![255];
+    let n = deck.peek_subset_into(&mut rng, Zone::Edge, 10, &mut peeked);
+    assert_eq!(n, 2);
+    assert_eq!(peeked, vec![0, 15]);
+    assert!(deck.is_full());
 }

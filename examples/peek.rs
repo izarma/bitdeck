@@ -37,7 +37,7 @@ impl ScryDeck {
     ///
     /// Staged cards are *out of the deck*: they cannot be drawn by anyone
     /// until [`resolve`](Self::resolve) puts them back or on top.
-    fn peek_many(&mut self, rng: &mut impl rand::Rng, k: usize) -> &[u8] {
+    fn stage_many(&mut self, rng: &mut impl rand::Rng, k: usize) -> &[u8] {
         debug_assert!(
             self.staging.is_empty(),
             "resolve the previous peek before peeking again"
@@ -53,6 +53,8 @@ impl ScryDeck {
             self.top.push_back(self.staging[i]);
         }
         for (i, &card) in self.staging.iter().enumerate() {
+            // `keep_in_draw_order` is tiny for a typical scry, so the O(n²)
+            // `contains` is simpler than building a set here.
             if !keep_in_draw_order.contains(&i) {
                 self.deck.insert(card); // "shuffle back" = set the bit again
             }
@@ -67,7 +69,7 @@ fn main() {
 
     println!("Full deck: {} cards.\n", scry.deck.remaining());
 
-    let peeked = scry.peek_many(&mut rng, 3).to_vec();
+    let peeked = scry.stage_many(&mut rng, 3).to_vec();
     println!("Scry 3 — peeked:");
     for (i, &id) in peeked.iter().enumerate() {
         println!("  [{i}] {}", card_name(id));

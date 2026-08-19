@@ -50,7 +50,7 @@ fn draw_from_game_deck(
         hand.insert_all(drawn);
 
         println!("Player {} drew:", i + 1);
-        for id in hand.iter() {
+        for id in &hand {
             println!("  {}", Card::from_id(id));
         }
     }
