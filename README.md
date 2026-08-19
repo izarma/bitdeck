@@ -24,30 +24,38 @@ The crate is `no_std`. The default feature set includes `alloc`; disable default
 
 ## Typed subsets
 
-Define a deck and its subsets in one place with [`deck!`]:
+Define a deck and its classification enums together with [`deck!`].
+Each variant maps to a bitmask, and the generated newtype accepts any
+`impl Subset<_>` in its `*_subset` methods:
 
 ```rust
-use bitdeck::cards::{Standard, Suit};
+use bitdeck::{deck, Deck};
 use rand::{SeedableRng, rngs::SmallRng};
 
-let mut rng = SmallRng::seed_from_u64(420);
-let mut deck = Standard::default();
+deck! {
+    struct Loot = Deck<6>;
+    subsets {
+        enum Rarity { Common, Rare }
+        from_id = |id: u8| id / 3;
+        cards = 6;
+    }
+}
 
-// `Suit::Hearts` implements `Subset<Standard>`.
-let heart = deck.draw_subset(&mut rng, Suit::Hearts).unwrap();
-assert_eq!(heart / 13, 2);
-assert_eq!(deck.count_subset(Suit::Hearts), 12);
+let mut rng = SmallRng::seed_from_u64(42);
+let mut pool = Loot::default();
+
+let rare = pool.draw_subset(&mut rng, Rarity::Rare).unwrap();
+assert!(rare >= 3);
+assert_eq!(pool.count_subset(Rarity::Common), 3);
 ```
 
-Raw `u64` APIs are still available through `Deref`:
+Raw `u64` APIs are still available through `Deref`.
 
-```rust
-use bitdeck::cards::{Standard, Suit};
+## Migrating from 0.1.x
 
-let mut deck = Standard::default();
-deck.remove_all(Suit::Hearts.mask());
-assert_eq!(deck.count_in(Suit::Hearts.mask()), 0);
-```
+Version 0.2.0 removes the `meanings!` macro, `stride_mask`, and `StdDeck` in
+favor of the `deck!` macro and typed subsets. See [CHANGELOG.md](CHANGELOG.md) for a short
+migration guide.
 
 ## Bitmask operations
 
@@ -66,10 +74,3 @@ RUSTFLAGS="-C target-feature=+bmi2" cargo build
 
 Note that this produces a binary that requires BMI2 at runtime; the default
 portable build still auto-detects BMI2 via CPUID and uses it when available.
-
-
-## Migrating from 0.1.x
-
-Version 0.2.0 removes the `meanings!` macro, `stride_mask`, and `StdDeck` in
-favor of the `deck!` macro and typed subsets. See [CHANGELOG.md](CHANGELOG.md) for a short
-migration guide.
